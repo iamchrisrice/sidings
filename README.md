@@ -137,7 +137,7 @@ sidings/
 - [x] `pkg/telemetry` — shared socket emitter
 - [x] `sidings task classify`
 - [x] `sidings task route`
-- [ ] `sidings task dispatch`
+- [x] `sidings task dispatch`
 - [ ] `sidings monitor`
 - [ ] `sidings task decompose` + `sidings task merge`
 - [ ] `sidings` wrapper with shell completion
