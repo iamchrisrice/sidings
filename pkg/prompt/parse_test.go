@@ -8,7 +8,7 @@ import (
 )
 
 func TestResponseWithSingleFileBlockReturnsOneFileChange(t *testing.T) {
-	response := "<<<< internal/auth/handler.go\npackage auth\n\nfunc Handler() {}\n>>>>"
+	response := "<file path=\"internal/auth/handler.go\">\npackage auth\n\nfunc Handler() {}\n</file>"
 	changes := prompt.ParseFileChanges(response)
 	if len(changes) != 1 {
 		t.Fatalf("expected 1 change, got %d", len(changes))
@@ -22,7 +22,7 @@ func TestResponseWithSingleFileBlockReturnsOneFileChange(t *testing.T) {
 }
 
 func TestResponseWithMultipleFileBlocksReturnsAll(t *testing.T) {
-	response := "<<<< a.go\npackage a\n>>>>\n<<<< b.go\npackage b\n>>>>"
+	response := "<file path=\"a.go\">\npackage a\n</file>\n<file path=\"b.go\">\npackage b\n</file>"
 	changes := prompt.ParseFileChanges(response)
 	if len(changes) != 2 {
 		t.Fatalf("expected 2 changes, got %d", len(changes))
@@ -53,9 +53,9 @@ func TestPlainTextResponseReturnsEmptySlice(t *testing.T) {
 	}
 }
 
-func TestMalformedBlockMissingClosingDelimiterHandledGracefully(t *testing.T) {
-	// No closing >>>> — the block is unclosed and must be silently discarded.
-	response := "<<<< incomplete.go\npackage main\n\nfunc main() {}\n"
+func TestMalformedBlockMissingClosingTagHandledGracefully(t *testing.T) {
+	// No closing </file> — the block is unclosed and must be silently discarded.
+	response := "<file path=\"incomplete.go\">\npackage main\n\nfunc main() {}\n"
 	// Must not panic.
 	changes := prompt.ParseFileChanges(response)
 	if len(changes) != 0 {
@@ -64,7 +64,7 @@ func TestMalformedBlockMissingClosingDelimiterHandledGracefully(t *testing.T) {
 }
 
 func TestFilePathWithSubdirectoriesPreservedExactly(t *testing.T) {
-	response := "<<<< internal/auth/middleware/jwt.go\npackage middleware\n>>>>"
+	response := "<file path=\"internal/auth/middleware/jwt.go\">\npackage middleware\n</file>"
 	changes := prompt.ParseFileChanges(response)
 	if len(changes) != 1 {
 		t.Fatalf("expected 1 change, got %d", len(changes))
@@ -74,12 +74,12 @@ func TestFilePathWithSubdirectoriesPreservedExactly(t *testing.T) {
 	}
 }
 
-func TestBlocksWithExtraWhitespaceAroundDelimitersStillParsed(t *testing.T) {
-	// Leading/trailing spaces on the delimiter lines should not break parsing.
-	response := "  <<<< spaced.go  \npackage spaced\n  >>>>  "
+func TestBlocksWithExtraWhitespaceAroundTagsStillParsed(t *testing.T) {
+	// Leading/trailing spaces on the tag lines should not break parsing.
+	response := "  <file path=\"spaced.go\">  \npackage spaced\n  </file>  "
 	changes := prompt.ParseFileChanges(response)
 	if len(changes) != 1 {
-		t.Fatalf("expected 1 change, got %d", len(changes))
+		t.Fatalf("expected 1 change, got %d\nresponse: %q", len(changes), response)
 	}
 	if changes[0].Path != "spaced.go" {
 		t.Errorf("path = %q, want spaced.go", changes[0].Path)
@@ -87,7 +87,7 @@ func TestBlocksWithExtraWhitespaceAroundDelimitersStillParsed(t *testing.T) {
 }
 
 func TestMultipleBlocksWithInterleavedPlainText(t *testing.T) {
-	response := "I'll update two files:\n\n<<<< foo.go\npackage foo\n>>>>\n\nDone.\n\n<<<< bar.go\npackage bar\n>>>>"
+	response := "I'll update two files:\n\n<file path=\"foo.go\">\npackage foo\n</file>\n\nDone.\n\n<file path=\"bar.go\">\npackage bar\n</file>"
 	changes := prompt.ParseFileChanges(response)
 	if len(changes) != 2 {
 		t.Fatalf("expected 2 changes, got %d", len(changes))
@@ -98,5 +98,28 @@ func TestEmptyResponseReturnsEmptySlice(t *testing.T) {
 	changes := prompt.ParseFileChanges("")
 	if len(changes) != 0 {
 		t.Errorf("expected empty slice for empty response, got %d", len(changes))
+	}
+}
+
+func TestEmptyFileContentIsIncluded(t *testing.T) {
+	response := "<file path=\"empty.go\">\n</file>"
+	changes := prompt.ParseFileChanges(response)
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 change for empty content block, got %d", len(changes))
+	}
+	if changes[0].Path != "empty.go" {
+		t.Errorf("path = %q, want empty.go", changes[0].Path)
+	}
+}
+
+func TestNestedContentThatLooksLikeTagsIsTreatedAsContent(t *testing.T) {
+	// Content containing what looks like XML should not be parsed as block delimiters.
+	response := "<file path=\"template.go\">\npackage tmpl\n// renders <file path=\"x\"> tags\n</file>"
+	changes := prompt.ParseFileChanges(response)
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 change, got %d", len(changes))
+	}
+	if !strings.Contains(changes[0].Content, "<file path=") {
+		t.Error("expected inner tag-like content to be preserved as file content")
 	}
 }

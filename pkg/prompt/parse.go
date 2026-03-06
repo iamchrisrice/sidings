@@ -8,7 +8,7 @@ type FileChange struct {
 	Content string
 }
 
-// ParseFileChanges extracts <<<< path / >>>> file blocks from a model response.
+// ParseFileChanges extracts <file path="...">...</file> blocks from a model response.
 // Returns an empty slice if no blocks are found. Never panics on malformed input.
 func ParseFileChanges(response string) []FileChange {
 	var changes []FileChange
@@ -20,9 +20,9 @@ func ParseFileChanges(response string) []FileChange {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, "<<<<") {
+		if strings.HasPrefix(trimmed, "<file ") && strings.HasSuffix(trimmed, ">") {
 			// Start of a new block — any open unclosed block is discarded.
-			path := strings.TrimSpace(strings.TrimPrefix(trimmed, "<<<<"))
+			path := extractPath(trimmed)
 			if path != "" {
 				current = &FileChange{Path: path}
 				contentLines = nil
@@ -30,7 +30,7 @@ func ParseFileChanges(response string) []FileChange {
 			continue
 		}
 
-		if trimmed == ">>>>" {
+		if trimmed == "</file>" {
 			if current != nil {
 				current.Content = strings.Join(contentLines, "\n")
 				changes = append(changes, *current)
@@ -47,4 +47,20 @@ func ParseFileChanges(response string) []FileChange {
 
 	// Unclosed blocks are silently discarded.
 	return changes
+}
+
+// extractPath parses the path attribute from a <file path="..."> opening tag.
+// Returns an empty string if the attribute is missing or malformed.
+func extractPath(openingTag string) string {
+	const attr = `path="`
+	i := strings.Index(openingTag, attr)
+	if i == -1 {
+		return ""
+	}
+	rest := openingTag[i+len(attr):]
+	j := strings.Index(rest, `"`)
+	if j == -1 {
+		return ""
+	}
+	return rest[:j]
 }

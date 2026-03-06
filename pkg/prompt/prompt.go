@@ -31,23 +31,33 @@ func Build(cfg Config) string {
 	lang := detectLanguage(dir)
 	ctx := GatherContext(dir, cfg.Task, cfg.Model)
 
-	return fmt.Sprintf(`You are a coding assistant working on a %s project.
-Current directory: %s
+	return fmt.Sprintf(`You are a coding assistant. You MUST respond using <file> blocks for any file changes.
 
-Project context:
+<file path="path/to/file.go">
+complete file contents here
+</file>
+
+Do not use markdown code blocks. Do not explain outside file blocks.
+If no file changes are needed, respond with plain text only.
+
+---
+
+Project context (%s project, %s):
 %s
 
 Task: %s
 
-For each file you want to create or modify, respond using this format exactly:
+For each file you want to create or modify, use this format exactly:
 
-<<<< path/to/file.go
-[complete file contents]
->>>>
+<file path="path/to/file.go">
+complete file contents here
+</file>
 
-Use one block per file. Include the complete file contents, not a diff.
-Do not include any explanation outside these blocks.
-If no file changes are needed, just respond with your answer as plain text.`,
+Rules:
+- One <file> block per file
+- Include complete file contents — not a diff, not a snippet
+- Do not include any explanation or markdown outside the file blocks
+- If no file changes are needed, respond with plain text only`,
 		lang, dir, ctx, cfg.Task)
 }
 
