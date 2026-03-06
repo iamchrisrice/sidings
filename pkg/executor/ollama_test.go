@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/iamchrisrice/sidings/pkg/executor"
@@ -64,7 +63,7 @@ func TestSuccessfulResponseWithFileBlocksWritesFilesAndPopulatesFilesWritten(t *
 	dir := t.TempDir()
 	initGitRepo(t, dir)
 
-	ts := ollamaServer(t, "<<<< hello.go\npackage main\n>>>>")
+	ts := ollamaServer(t, "<file path=\"hello.go\">\npackage main\n</file>")
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: ts.URL,
 		Yes:       true,
@@ -131,7 +130,7 @@ func TestResponseOutsideGitRepoPathIsRefused(t *testing.T) {
 
 	// Model attempts to write a file using an absolute path outside the repo.
 	outsidePath := filepath.Join(t.TempDir(), "evil.go")
-	ts := ollamaServer(t, fmt.Sprintf("<<<< %s\npackage evil\n>>>>", outsidePath))
+	ts := ollamaServer(t, fmt.Sprintf("<file path=%q>\npackage evil\n</file>", outsidePath))
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: ts.URL,
 		Yes:       true,
@@ -148,16 +147,15 @@ func TestResponseOutsideGitRepoPathIsRefused(t *testing.T) {
 	}
 }
 
-func TestYesFlagSkipsConfirmationPrompt(t *testing.T) {
+func TestYesFlagSkipsConfirmationAndWritesFile(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir)
 
-	ts := ollamaServer(t, "<<<< confirmed.go\npackage main\n>>>>")
+	ts := ollamaServer(t, "<file path=\"confirmed.go\">\npackage main\n</file>")
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: ts.URL,
 		Yes:       true,
 		WorkDir:   dir,
-		Stdin:     strings.NewReader(""), // empty — would block if confirmation were requested
 	})
 
 	result, err := ex.Execute(testTask(ts))

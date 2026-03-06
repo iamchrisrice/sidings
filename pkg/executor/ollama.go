@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,16 +14,16 @@ import (
 
 	"github.com/iamchrisrice/sidings/pkg/pipe"
 	"github.com/iamchrisrice/sidings/pkg/prompt"
+	"github.com/iamchrisrice/sidings/pkg/tty"
 )
 
 // OllamaConfig configures the Ollama executor.
 type OllamaConfig struct {
-	OllamaURL string    // default: http://localhost:11434
-	Yes       bool      // skip confirmation prompt
-	DryRun    bool      // print prompt to stderr, don't execute
-	TTY       bool      // stream tokens to stderr as they arrive
-	WorkDir   string    // override working directory (empty = os.Getwd)
-	Stdin     io.Reader // override stdin for confirmation input (empty = os.Stdin)
+	OllamaURL string // default: http://localhost:11434
+	Yes       bool   // skip confirmation prompt
+	DryRun    bool   // print prompt to stderr, don't execute
+	TTY       bool   // stream tokens to stderr as they arrive
+	WorkDir   string // override working directory (empty = os.Getwd)
 }
 
 type ollamaExecutor struct {
@@ -36,9 +35,6 @@ type ollamaExecutor struct {
 func NewOllama(cfg OllamaConfig) Executor {
 	if cfg.OllamaURL == "" {
 		cfg.OllamaURL = "http://localhost:11434"
-	}
-	if cfg.Stdin == nil {
-		cfg.Stdin = os.Stdin
 	}
 	return &ollamaExecutor{
 		cfg:    cfg,
@@ -164,13 +160,8 @@ func (e *ollamaExecutor) confirm(changes []prompt.FileChange) error {
 	for _, ch := range changes {
 		fmt.Fprintf(os.Stderr, "  %s\n", ch.Path)
 	}
-	fmt.Fprint(os.Stderr, "Continue? (y/n) ")
-
-	scanner := bufio.NewScanner(e.cfg.Stdin)
-	if scanner.Scan() {
-		if strings.TrimSpace(strings.ToLower(scanner.Text())) != "y" {
-			return fmt.Errorf("aborted by user")
-		}
+	if !tty.Confirm("Write files?") {
+		return fmt.Errorf("aborted by user")
 	}
 	return nil
 }

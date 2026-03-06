@@ -8,6 +8,7 @@ import (
 
 	"github.com/iamchrisrice/sidings/pkg/pipe"
 	"github.com/iamchrisrice/sidings/pkg/telemetry"
+	"github.com/iamchrisrice/sidings/pkg/tty"
 )
 
 type claudeExecutor struct{}
@@ -30,7 +31,7 @@ func (e *claudeExecutor) Execute(task pipe.Task) (Result, error) {
 	})
 
 	cmd := exec.Command("claude", "-p", task.Content)
-	cmd.Stdin = os.Stdin
+	cmd.Stdin = tty.Reader()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()

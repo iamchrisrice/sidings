@@ -8,6 +8,7 @@ import (
 	"github.com/iamchrisrice/sidings/pkg/executor"
 	"github.com/iamchrisrice/sidings/pkg/pipe"
 	"github.com/iamchrisrice/sidings/pkg/telemetry"
+	"github.com/iamchrisrice/sidings/pkg/tty"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -68,6 +69,15 @@ func main() {
 				Model:   task.Route.Model,
 				Status:  "running",
 			})
+
+			if task.Route.Backend == "claude" && !yes && !cfg.SkipConfirmation {
+				if !tty.Confirm("⚠️  routing to claude sonnet — continue?") {
+					task.Status = "failed"
+					task.Error = "aborted by user"
+					_ = pipe.Write(os.Stdout, task)
+					return fmt.Errorf("aborted by user")
+				}
+			}
 
 			var backend executor.Executor
 			switch task.Route.Backend {
