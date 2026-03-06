@@ -79,7 +79,7 @@ func ensureClaudePermissions(dir string) error {
 		return fmt.Errorf("creating .claude directory: %w", err)
 	}
 
-	settings := "{\n  \"allowedDirectories\": [\".\"]\n}\n"
+	settings := "{\n  \"permissions\": {\n    \"defaultMode\": \"acceptEdits\"\n  }\n}\n"
 	if err := os.WriteFile(settingsPath, []byte(settings), 0644); err != nil {
 		return fmt.Errorf("writing .claude/settings.json: %w", err)
 	}

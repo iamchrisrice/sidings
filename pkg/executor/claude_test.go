@@ -24,8 +24,12 @@ func TestEnsureClaudePermissionsCreatesFileWhenMissing(t *testing.T) {
 	if err := json.Unmarshal(data, &settings); err != nil {
 		t.Fatalf("settings.json is not valid JSON: %v", err)
 	}
-	if _, ok := settings["allowedDirectories"]; !ok {
-		t.Error("expected allowedDirectories key in settings.json")
+	perms, ok := settings["permissions"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected permissions object in settings.json")
+	}
+	if perms["defaultMode"] != "acceptEdits" {
+		t.Errorf("defaultMode = %q, want acceptEdits", perms["defaultMode"])
 	}
 }
 
