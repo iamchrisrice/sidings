@@ -14,14 +14,15 @@ import (
 
 // Task is the core type flowing through the sidings pipeline.
 type Task struct {
-	TaskID     string  `json:"task_id"`
-	Content    string  `json:"content"`
-	Tier       string  `json:"tier,omitempty"`
-	Route      *Route  `json:"route,omitempty"`
-	Result     string  `json:"result,omitempty"`
-	Status     string  `json:"status,omitempty"`
-	Error      string  `json:"error,omitempty"`
-	DurationMS int64   `json:"duration_ms,omitempty"`
+	TaskID       string   `json:"task_id"`
+	Content      string   `json:"content"`
+	Tier         string   `json:"tier,omitempty"`
+	Route        *Route   `json:"route,omitempty"`
+	Result       string   `json:"result,omitempty"`
+	Status       string   `json:"status,omitempty"`
+	Error        string   `json:"error,omitempty"`
+	DurationMS   int64    `json:"duration_ms,omitempty"`
+	FilesWritten []string `json:"files_written,omitempty"`
 }
 
 // Route describes the selected execution backend.

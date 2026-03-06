@@ -1,4 +1,15 @@
-// Package executor provides execution backends for Ollama and Claude Code.
+// Package executor provides execution backends for sidings tasks.
 package executor
 
-// TODO: implement Ollama and Claude Code execution backends
+import "github.com/iamchrisrice/sidings/pkg/pipe"
+
+// Executor executes a routed task and returns the result.
+type Executor interface {
+	Execute(task pipe.Task) (Result, error)
+}
+
+// Result holds the outcome of task execution.
+type Result struct {
+	FilesWritten []string // paths of files created or modified
+	Output       string   // plain-text model output (when no file blocks found)
+}
