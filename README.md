@@ -133,10 +133,10 @@ sidings/
 
 ## Build status
 
-- [ ] `pkg/pipe` — shared NDJSON types
-- [ ] `pkg/telemetry` — shared socket emitter
-- [ ] `sidings task classify`
-- [ ] `sidings task route`
+- [x] `pkg/pipe` — shared NDJSON types
+- [x] `pkg/telemetry` — shared socket emitter
+- [x] `sidings task classify`
+- [x] `sidings task route`
 - [ ] `sidings task dispatch`
 - [ ] `sidings monitor`
 - [ ] `sidings task decompose` + `sidings task merge`
