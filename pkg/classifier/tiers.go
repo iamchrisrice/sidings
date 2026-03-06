@@ -23,8 +23,9 @@ var tiers = []Tier{
 	{
 		Name: "medium",
 		Keywords: []string{
-			"add", "write", "create", "implement", "extend",
-			"handle", "support", "include",
+			"add", "write", "extend", "support", "include",
+			"create a", "create a function", "create a method", "create a test",
+			"create a helper", "create a handler", "create a struct",
 		},
 	},
 	{
@@ -32,7 +33,7 @@ var tiers = []Tier{
 		Keywords: []string{
 			"refactor", "redesign", "restructure", "reorganise",
 			"rewrite", "multiple files", "across the codebase",
-			"extract", "migrate",
+			"extract", "migrate", "implement", "add support for", "add integration",
 		},
 	},
 	{
@@ -41,6 +42,13 @@ var tiers = []Tier{
 			"why is", "why does", "can't figure out", "not working",
 			"performance", "deadlock", "race condition",
 			"architect", "system design", "design a",
+			"build a", "build me", "generate", "scaffold", "bootstrap",
+			"initialise", "initialize", "from scratch",
+			"new project", "new service", "new application", "new api",
+			"rest api", "full tests", "layered", "architecture",
+			"docker", "kubernetes", "helm", "deployment", "container",
+			"distroless", "microservice", "infrastructure",
+			"ci/cd", "pipeline", "terraform", "cloud",
 		},
 	},
 }

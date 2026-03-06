@@ -403,6 +403,54 @@ func TestScoresMapIsPopulatedForHeuristicResults(t *testing.T) {
 	}
 }
 
+// --- Regression table ---
+
+// TestRegressionTable guards against misclassification of real-world inputs.
+// Every case must resolve cleanly via heuristic (method="heuristic") with no
+// LLM call — if a case needs LLM it means the keyword lists need tuning.
+func TestRegressionTable(t *testing.T) {
+	cases := []struct {
+		input string
+		tier  string
+	}{
+		// simple
+		{"fix the typo in the comment", "simple"},
+		{"rename this variable", "simple"},
+		// medium
+		{"create a test for the login handler", "medium"},
+		{"create a helper function for formatting dates", "medium"},
+		{"add a retry mechanism to the HTTP client", "medium"},
+		// complex
+		{"refactor the payment module", "complex"},
+		{"extract the database layer into its own package", "complex"},
+		// exceptional
+		{"build a REST API with layered architecture and full tests", "exceptional"},
+		{"build me a simple CRUD API", "exceptional"},
+		{"why is the login handler not returning the right response", "exceptional"},
+		{"generate a REST API with Docker and Kubernetes deployment on Helm", "exceptional"},
+		{"scaffold a microservice with CI/CD pipeline", "exceptional"},
+	}
+
+	c := classifier.New(noLLM())
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.input, func(t *testing.T) {
+			result, err := c.Classify(tc.input)
+			if err != nil {
+				t.Fatalf("Classify: %v", err)
+			}
+			if result.Tier != tc.tier {
+				t.Errorf("tier = %q, want %q (method=%s matched=%v scores=%v)",
+					result.Tier, tc.tier, result.Method, result.Matched, result.Scores)
+			}
+			if result.Method != "heuristic" {
+				t.Errorf("method = %q, want heuristic — keyword lists need tuning (matched=%v scores=%v)",
+					result.Method, result.Matched, result.Scores)
+			}
+		})
+	}
+}
+
 func TestOllamaRequestBodyContainsTaskContent(t *testing.T) {
 	// Verify the classifier sends the task content in the Ollama request body.
 	var capturedBody []byte

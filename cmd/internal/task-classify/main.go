@@ -90,6 +90,8 @@ func main() {
 				return err
 			}
 			task.Tier = result.Tier
+			task.Method = result.Method
+			task.Matched = result.Matched
 
 			if verbose {
 				printVerbose(result)

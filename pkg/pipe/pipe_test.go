@@ -133,6 +133,30 @@ func TestWriteOutputIsReadableByRead(t *testing.T) {
 	}
 }
 
+func TestWriteAndReadPreservesMethodAndMatched(t *testing.T) {
+	original := &pipe.Task{
+		TaskID:  "meta-id",
+		Content: "refactor the auth module",
+		Tier:    "complex",
+		Method:  "heuristic",
+		Matched: []string{"refactor"},
+	}
+	var buf bytes.Buffer
+	if err := pipe.Write(&buf, original); err != nil {
+		t.Fatal(err)
+	}
+	got, err := pipe.Read(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Method != original.Method {
+		t.Errorf("Method: got %q, want %q", got.Method, original.Method)
+	}
+	if len(got.Matched) != len(original.Matched) || got.Matched[0] != original.Matched[0] {
+		t.Errorf("Matched: got %v, want %v", got.Matched, original.Matched)
+	}
+}
+
 func TestWriteOmitsZeroValueFields(t *testing.T) {
 	task := &pipe.Task{TaskID: "x", Content: "hello"}
 	var buf bytes.Buffer
