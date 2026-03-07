@@ -64,6 +64,27 @@ echo "build a notifications system" \
 | `complex` | Ollama `qwen2.5-coder:32b` | Implement feature, multi-file refactor |
 | `exceptional` | Claude Sonnet | System design, deep debugging |
 
+## Known behaviour
+
+**Greenfield project creation always routes to exceptional.**
+Tasks like "create a REST API" or "scaffold a new service" always route to Claude Code. Local models cannot reliably produce multiple complete files in a single shot. This is by design — Claude Code handles multi-file creation iteratively, which works far better than a single-shot prompt to a local model.
+
+**Classification improves with specificity.**
+"Create a function to validate emails" routes correctly to medium. "Create a REST API with full tests" routes correctly to exceptional. Vague short tasks are more likely to misclassify — the more specific the task, the better the classification.
+
+**Classifier keyword tuning.**
+The heuristic keyword lists live in `pkg/classifier/tiers.go` and are easy to edit. If you notice consistent misclassifications for your workflow, adding keywords there is the fastest fix. The `method` and `matched` fields in classify output show exactly which keywords fired:
+
+```bash
+echo "your task" | sidings task classify | jq '{tier, method, matched}'
+```
+
+**`.claude/settings.json` is created automatically.**
+On first run in a new project directory, `sidings task dispatch` creates `.claude/settings.json` with sandbox mode enabled. This allows Claude Code to run autonomously within the project directory without permission prompts. If the file already exists with conflicting settings, sidings will exit with a clear error rather than overwriting your configuration.
+
+**Ollama models respond in `<file>` blocks.**
+When dispatching to local models, sidings instructs them to respond using XML-style file blocks. Most of the time this works. Occasionally a model responds in prose instead — when this happens the response is stored in the `result` field of the NDJSON output and no files are written. Use `--dry-run` to inspect the prompt if you see unexpected prose responses.
+
 ## Pipe format
 
 Tools communicate via NDJSON — one JSON object per line. Each tool reads from stdin, enriches the object, and passes it downstream:
@@ -73,7 +94,7 @@ Tools communicate via NDJSON — one JSON object per line. Each tool reads from 
 ```
 After `sidings task classify`:
 ```json
-{"task_id": "abc123", "content": "refactor the auth module", "tier": "complex"}
+{"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "method": "heuristic", "matched": ["refactor"]}
 ```
 After `sidings task route`:
 ```json
@@ -86,18 +107,47 @@ After `sidings task dispatch`:
 
 Plain text input is accepted anywhere — tools wrap it into NDJSON automatically.
 
+## Diagnosing misclassifications
+
+The `method` and `matched` fields show exactly how a classification was reached:
+
+```bash
+echo "your task" | sidings task classify | jq '{tier, method, matched}'
+# {"tier": "medium", "method": "heuristic", "matched": ["create"]}
+```
+
+- `method: heuristic` — keyword list won outright
+- `method: llm` — ambiguous heuristics, LLM fallback made the call
+- `method: fallback` — LLM unavailable, defaulted to medium
+
+If the wrong keywords are firing, edit `pkg/classifier/tiers.go` and rebuild.
+
 ## Installation
 
 ```bash
-git clone https://github.com/iamchrisrice/sidings
+git clone https://github.com/you/sidings
 cd sidings
 make install
-sidings completion install
+```
+
+Installs libexec binaries to `~/.local/libexec/sidings/` and the `sidings` wrapper to `~/.local/bin/`.
+
+Until the `sidings` wrapper is built, call the libexec binaries directly:
+
+```bash
+echo "refactor the auth module" \
+  | ~/.local/libexec/sidings/task-classify \
+  | ~/.local/libexec/sidings/task-route \
+  | ~/.local/libexec/sidings/task-dispatch
 ```
 
 **Prerequisites:**
+- Go 1.21+
 - [Ollama](https://ollama.com) installed and running
-- [Claude Code](https://claude.ai/code) installed and logged in
+- [Claude Code](https://claude.ai/code) installed and authenticated (`claude login`)
+- `git` — sidings uses git for context gathering; run `git init` in your project before using sidings
+
+Pull the required models:
 
 ```bash
 ollama pull qwen3.5:0.8b
@@ -105,6 +155,8 @@ ollama pull qwen3.5:9b
 ollama pull qwen2.5-coder:32b
 export OLLAMA_MAX_LOADED_MODELS=3
 ```
+
+No Anthropic API key needed — Claude Code handles auth with your existing Claude subscription.
 
 ## Project structure
 
