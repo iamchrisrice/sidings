@@ -40,7 +40,7 @@ func readSettings(t *testing.T, dir string) map[string]interface{} {
 func TestEnsureClaudeSettingsMissingFile(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := ensureClaudeSettings(dir); err != nil {
+	if err := ensureClaudeSettings(dir, false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -71,7 +71,7 @@ func TestEnsureClaudeSettingsMergesSandbox(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"custom":"value","permissions":{"defaultMode":"acceptEdits"}}`)
 
-	if err := ensureClaudeSettings(dir); err != nil {
+	if err := ensureClaudeSettings(dir, false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -96,7 +96,7 @@ func TestEnsureClaudeSettingsNoop(t *testing.T) {
 
 	statBefore, _ := os.Stat(p)
 
-	if err := ensureClaudeSettings(dir); err != nil {
+	if err := ensureClaudeSettings(dir, false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -111,7 +111,7 @@ func TestEnsureClaudeSettingsSandboxDisabledClash(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"sandbox":{"enabled":false}}`)
 
-	err := ensureClaudeSettings(dir)
+	err := ensureClaudeSettings(dir, false)
 	if !errors.Is(err, ErrSettingsConflict) {
 		t.Fatalf("expected ErrSettingsConflict, got %v", err)
 	}
@@ -122,7 +122,7 @@ func TestEnsureClaudeSettingsDisableBypassClash(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"permissions":{"disableBypassPermissionsMode":"disable"}}`)
 
-	err := ensureClaudeSettings(dir)
+	err := ensureClaudeSettings(dir, false)
 	if !errors.Is(err, ErrSettingsConflict) {
 		t.Fatalf("expected ErrSettingsConflict, got %v", err)
 	}
@@ -148,7 +148,7 @@ func TestEnsureClaudeSettingsMultipleClashes(t *testing.T) {
 	}
 
 	// Also confirm ensureClaudeSettings returns ErrSettingsConflict.
-	err := ensureClaudeSettings(dir)
+	err := ensureClaudeSettings(dir, false)
 	if !errors.Is(err, ErrSettingsConflict) {
 		t.Fatalf("expected ErrSettingsConflict, got %v", err)
 	}
@@ -159,7 +159,7 @@ func TestEnsureClaudeSettingsDefaultModePreserved(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"permissions":{"defaultMode":"bypassPermissions"}}`)
 
-	if err := ensureClaudeSettings(dir); err != nil {
+	if err := ensureClaudeSettings(dir, false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestEnsureClaudeSettingsNoRelevantKeys(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"someOtherKey":42}`)
 
-	if err := ensureClaudeSettings(dir); err != nil {
+	if err := ensureClaudeSettings(dir, false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -204,7 +204,7 @@ func TestEnsureClaudeSettingsMalformedJSON(t *testing.T) {
 	dir := t.TempDir()
 	p := writeSettings(t, dir, `{not valid json`)
 
-	err := ensureClaudeSettings(dir)
+	err := ensureClaudeSettings(dir, false)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}

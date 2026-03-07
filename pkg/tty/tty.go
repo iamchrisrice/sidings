@@ -2,10 +2,8 @@
 package tty
 
 import (
-	"fmt"
 	"io"
 	"os"
-	"strings"
 )
 
 // Reader returns /dev/tty if available, falling back to os.Stdin.
@@ -21,21 +19,4 @@ func Reader() io.Reader {
 		return os.Stdin
 	}
 	return tty
-}
-
-// Confirm prints a prompt to stderr and reads a y/n response from the
-// terminal. Returns true if the user responds with "y" or "yes".
-// Always reads from /dev/tty so it works correctly inside pipelines.
-func Confirm(prompt string) bool {
-	return ConfirmFromReader(prompt, Reader())
-}
-
-// ConfirmFromReader is the testable core of Confirm.
-// It prints to stderr and reads a response from r.
-func ConfirmFromReader(prompt string, r io.Reader) bool {
-	fmt.Fprintf(os.Stderr, "%s (y/n) ", prompt)
-	var response string
-	fmt.Fscan(r, &response) //nolint:errcheck
-	resp := strings.ToLower(strings.TrimSpace(response))
-	return resp == "y" || resp == "yes"
 }

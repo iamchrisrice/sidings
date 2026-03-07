@@ -66,11 +66,10 @@ func TestSuccessfulResponseWithFileBlocksWritesFilesAndPopulatesFilesWritten(t *
 	ts := ollamaServer(t, "<file path=\"hello.go\">\npackage main\n</file>")
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: ts.URL,
-		Yes:       true,
 		WorkDir:   dir,
 	})
 
-	result, err := ex.Execute(testTask(ts))
+	result, err := ex.Execute(testTask(ts), false)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -92,11 +91,10 @@ func TestSuccessfulResponseWithoutFileBlocksPopulatesOutput(t *testing.T) {
 	ts := ollamaServer(t, "The issue is a race condition in the goroutine pool.")
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: ts.URL,
-		Yes:       true,
 		WorkDir:   dir,
 	})
 
-	result, err := ex.Execute(testTask(ts))
+	result, err := ex.Execute(testTask(ts), false)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -114,11 +112,10 @@ func TestOllamaUnavailableReturnsErrorWithNoPanic(t *testing.T) {
 
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: "http://localhost:1", // nothing listening here
-		Yes:       true,
 		WorkDir:   dir,
 	})
 
-	_, err := ex.Execute(testTask(nil))
+	_, err := ex.Execute(testTask(nil), false)
 	if err == nil {
 		t.Error("expected an error when Ollama is unavailable, got nil")
 	}
@@ -133,11 +130,10 @@ func TestResponseOutsideGitRepoPathIsRefused(t *testing.T) {
 	ts := ollamaServer(t, fmt.Sprintf("<file path=%q>\npackage evil\n</file>", outsidePath))
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: ts.URL,
-		Yes:       true,
 		WorkDir:   dir,
 	})
 
-	_, err := ex.Execute(testTask(ts))
+	_, err := ex.Execute(testTask(ts), false)
 	if err == nil {
 		t.Error("expected an error when writing outside the git repo")
 	}
@@ -147,23 +143,22 @@ func TestResponseOutsideGitRepoPathIsRefused(t *testing.T) {
 	}
 }
 
-func TestYesFlagSkipsConfirmationAndWritesFile(t *testing.T) {
+func TestFilesAreWrittenWithoutConfirmation(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir)
 
 	ts := ollamaServer(t, "<file path=\"confirmed.go\">\npackage main\n</file>")
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: ts.URL,
-		Yes:       true,
 		WorkDir:   dir,
 	})
 
-	result, err := ex.Execute(testTask(ts))
+	result, err := ex.Execute(testTask(ts), false)
 	if err != nil {
-		t.Fatalf("Execute with Yes=true: %v", err)
+		t.Fatalf("Execute: %v", err)
 	}
 	if len(result.FilesWritten) == 0 {
-		t.Error("expected file to be written when Yes=true")
+		t.Error("expected file to be written")
 	}
 }
 
@@ -178,11 +173,10 @@ func TestOllamaHTTPErrorReturnsError(t *testing.T) {
 
 	ex := executor.NewOllama(executor.OllamaConfig{
 		OllamaURL: ts.URL,
-		Yes:       true,
 		WorkDir:   dir,
 	})
 
-	_, err := ex.Execute(testTask(ts))
+	_, err := ex.Execute(testTask(ts), false)
 	if err == nil {
 		t.Error("expected error for HTTP 500, got nil")
 	}

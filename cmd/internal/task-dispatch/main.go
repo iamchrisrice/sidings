@@ -8,14 +8,12 @@ import (
 	"github.com/iamchrisrice/sidings/pkg/executor"
 	"github.com/iamchrisrice/sidings/pkg/pipe"
 	"github.com/iamchrisrice/sidings/pkg/telemetry"
-	"github.com/iamchrisrice/sidings/pkg/tty"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
 type dispatchConfig struct {
-	OllamaURL        string `yaml:"ollama_url"`
-	SkipConfirmation bool   `yaml:"skip_confirmation"`
+	OllamaURL string `yaml:"ollama_url"`
 }
 
 func loadConfig() dispatchConfig {
@@ -32,17 +30,9 @@ func loadConfig() dispatchConfig {
 	return cfg
 }
 
-func isTTY() bool {
-	fi, err := os.Stderr.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
-}
-
 func main() {
-	var yes bool
 	var dryRun bool
+	var verbose bool
 
 	root := &cobra.Command{
 		Use:          "task-dispatch",
@@ -70,15 +60,6 @@ func main() {
 				Status:  "running",
 			})
 
-			if task.Route.Backend == "claude" && !yes && !cfg.SkipConfirmation {
-				if !tty.Confirm("⚠️  routing to claude sonnet — continue?") {
-					task.Status = "failed"
-					task.Error = "aborted by user"
-					_ = pipe.Write(os.Stdout, task)
-					return fmt.Errorf("aborted by user")
-				}
-			}
-
 			var backend executor.Executor
 			switch task.Route.Backend {
 			case "claude":
@@ -86,13 +67,11 @@ func main() {
 			default:
 				backend = executor.NewOllama(executor.OllamaConfig{
 					OllamaURL: cfg.OllamaURL,
-					Yes:       yes || cfg.SkipConfirmation,
 					DryRun:    dryRun,
-					TTY:       isTTY(),
 				})
 			}
 
-			result, err := backend.Execute(*task)
+			result, err := backend.Execute(*task, verbose)
 			task.DurationMS = time.Since(start).Milliseconds()
 
 			if err != nil {
@@ -129,8 +108,8 @@ func main() {
 		},
 	}
 
-	root.Flags().BoolVar(&yes, "yes", false, "skip confirmation prompts")
 	root.Flags().BoolVar(&dryRun, "dry-run", false, "print built prompt to stderr, don't execute")
+	root.Flags().BoolVar(&verbose, "verbose", false, "show routing, file writes, and token streaming")
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)

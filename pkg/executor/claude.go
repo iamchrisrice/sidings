@@ -28,13 +28,15 @@ func NewClaude() Executor {
 	return &claudeExecutor{}
 }
 
-func (e *claudeExecutor) Execute(task pipe.Task) (Result, error) {
+func (e *claudeExecutor) Execute(task pipe.Task, verbose bool) (Result, error) {
+	start := time.Now()
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return Result{}, fmt.Errorf("getting working directory: %w", err)
 	}
 
-	if err := ensureClaudeSettings(dir); err != nil {
+	if err := ensureClaudeSettings(dir, verbose); err != nil {
 		if errors.Is(err, ErrSettingsConflict) {
 			// Message already printed to stderr by ensureClaudeSettings.
 			return Result{}, err
@@ -42,8 +44,6 @@ func (e *claudeExecutor) Execute(task pipe.Task) (Result, error) {
 		// Non-conflict error — warn but continue.
 		fmt.Fprintf(os.Stderr, "sidings: warning: could not configure .claude/settings.json: %v\n", err)
 	}
-
-	start := time.Now()
 
 	telemetry.Emit(telemetry.Event{
 		Tool:    "task-dispatch",
@@ -74,12 +74,14 @@ func (e *claudeExecutor) Execute(task pipe.Task) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("claude: %w", err)
 	}
+
+	fmt.Fprintf(os.Stderr, "✓ done (%.1fs)\n", time.Since(start).Seconds())
 	return Result{}, nil
 }
 
 // ensureClaudeSettings creates or updates .claude/settings.json in dir so that
 // sandbox mode is enabled. It detects and rejects conflicting settings.
-func ensureClaudeSettings(dir string) error {
+func ensureClaudeSettings(dir string, verbose bool) error {
 	settingsPath := filepath.Join(dir, ".claude", "settings.json")
 
 	// Case 1: file missing — create with correct settings.
@@ -90,7 +92,9 @@ func ensureClaudeSettings(dir string) error {
 		if err := os.WriteFile(settingsPath, []byte(defaultSettings()), 0644); err != nil {
 			return fmt.Errorf("writing .claude/settings.json: %w", err)
 		}
-		fmt.Fprintln(os.Stderr, "sidings: created .claude/settings.json (sandbox enabled)")
+		if verbose {
+			fmt.Fprintln(os.Stderr, "sidings: created .claude/settings.json (sandbox enabled)")
+		}
 		return nil
 	}
 
@@ -129,7 +133,9 @@ func ensureClaudeSettings(dir string) error {
 		return fmt.Errorf("writing .claude/settings.json: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "sidings: updated .claude/settings.json (sandbox enabled)")
+	if verbose {
+		fmt.Fprintln(os.Stderr, "sidings: updated .claude/settings.json (sandbox enabled)")
+	}
 	return nil
 }
 

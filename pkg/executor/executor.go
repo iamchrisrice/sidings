@@ -5,7 +5,7 @@ import "github.com/iamchrisrice/sidings/pkg/pipe"
 
 // Executor executes a routed task and returns the result.
 type Executor interface {
-	Execute(task pipe.Task) (Result, error)
+	Execute(task pipe.Task, verbose bool) (Result, error)
 }
 
 // Result holds the outcome of task execution.

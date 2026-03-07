@@ -14,15 +14,12 @@ import (
 
 	"github.com/iamchrisrice/sidings/pkg/pipe"
 	"github.com/iamchrisrice/sidings/pkg/prompt"
-	"github.com/iamchrisrice/sidings/pkg/tty"
 )
 
 // OllamaConfig configures the Ollama executor.
 type OllamaConfig struct {
 	OllamaURL string // default: http://localhost:11434
-	Yes       bool   // skip confirmation prompt
 	DryRun    bool   // print prompt to stderr, don't execute
-	TTY       bool   // stream tokens to stderr as they arrive
 	WorkDir   string // override working directory (empty = os.Getwd)
 }
 
@@ -59,7 +56,9 @@ func (e *ollamaExecutor) workDir() (string, error) {
 	return wd, nil
 }
 
-func (e *ollamaExecutor) Execute(task pipe.Task) (Result, error) {
+func (e *ollamaExecutor) Execute(task pipe.Task, verbose bool) (Result, error) {
+	start := time.Now()
+
 	dir, err := e.workDir()
 	if err != nil {
 		return Result{}, err
@@ -79,31 +78,31 @@ func (e *ollamaExecutor) Execute(task pipe.Task) (Result, error) {
 		return Result{}, nil
 	}
 
-	response, err := e.callOllama(task.Route.Model, p)
+	response, err := e.callOllama(task.Route.Model, p, verbose)
 	if err != nil {
 		return Result{}, fmt.Errorf("ollama: %w", err)
 	}
 
 	changes := prompt.ParseFileChanges(response)
 	if len(changes) == 0 {
+		fmt.Fprintf(os.Stderr, "✓ done (%.1fs)\n", time.Since(start).Seconds())
 		return Result{Output: response}, nil
 	}
 
 	gitRoot := findGitRoot(dir)
 
-	if !e.cfg.Yes {
-		if err := e.confirm(changes); err != nil {
-			return Result{}, err
-		}
-	}
-
 	var written []string
 	for _, ch := range changes {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "writing %s\n", ch.Path)
+		}
 		if err := e.writeFile(dir, gitRoot, ch); err != nil {
 			return Result{}, err
 		}
 		written = append(written, ch.Path)
 	}
+
+	fmt.Fprintf(os.Stderr, "✓ wrote %d file(s) (%.1fs)\n", len(written), time.Since(start).Seconds())
 	return Result{FilesWritten: written}, nil
 }
 
@@ -118,7 +117,7 @@ type ollamaRequest struct {
 	Stream bool   `json:"stream"`
 }
 
-func (e *ollamaExecutor) callOllama(model, promptText string) (string, error) {
+func (e *ollamaExecutor) callOllama(model, promptText string, verbose bool) (string, error) {
 	body, err := json.Marshal(ollamaRequest{Model: model, Prompt: promptText, Stream: true})
 	if err != nil {
 		return "", err
@@ -142,28 +141,17 @@ func (e *ollamaExecutor) callOllama(model, promptText string) (string, error) {
 			continue
 		}
 		sb.WriteString(line.Response)
-		if e.cfg.TTY {
+		if verbose {
 			fmt.Fprint(os.Stderr, line.Response)
 		}
 		if line.Done {
 			break
 		}
 	}
-	if e.cfg.TTY {
+	if verbose {
 		fmt.Fprintln(os.Stderr)
 	}
 	return sb.String(), scanner.Err()
-}
-
-func (e *ollamaExecutor) confirm(changes []prompt.FileChange) error {
-	fmt.Fprintf(os.Stderr, "Will write %d file(s):\n", len(changes))
-	for _, ch := range changes {
-		fmt.Fprintf(os.Stderr, "  %s\n", ch.Path)
-	}
-	if !tty.Confirm("Write files?") {
-		return fmt.Errorf("aborted by user")
-	}
-	return nil
 }
 
 func (e *ollamaExecutor) writeFile(workDir, gitRoot string, ch prompt.FileChange) error {
