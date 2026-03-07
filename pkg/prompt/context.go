@@ -11,64 +11,65 @@ import (
 )
 
 // GatherContext builds project context for the prompt.
-// Reads README, linked docs, ranked source files, and a project tree.
-// model is used to determine the token budget for source files.
+// Reads directory tree, README (if present), linked docs (if README present),
+// and ranked source files. model is used to determine the token budget.
 func GatherContext(dir string, task string, model string) string {
 	budgetChars := tokenBudgetChars(model)
-	var sb strings.Builder
+	var parts []string
 
-	// README — primary context.
-	readme := readTextFile(filepath.Join(dir, "README.md"))
-	if readme != "" {
-		sb.WriteString("### README\n\n")
-		sb.WriteString(readme)
-		sb.WriteString("\n\n")
-		budgetChars -= len(readme)
+	// 1. Directory tree — always.
+	if tree := buildTree(dir); tree != "" {
+		parts = append(parts, "### Project structure\n\n```\n"+tree+"\n```")
+	}
 
-		// Linked local docs, one level deep.
-		for _, link := range extractLocalLinks(readme) {
-			if isSecret(link) {
+	// 2. README — optional, silently skipped if missing.
+	readmeContent := ""
+	if content, err := os.ReadFile(filepath.Join(dir, "README.md")); err == nil {
+		readmeContent = string(content)
+		parts = append(parts, "### README\n\n"+readmeContent)
+		budgetChars -= len(readmeContent)
+	}
+
+	// 3. Linked local docs — only when README exists.
+	if readmeContent != "" {
+		for _, linked := range parseMarkdownLinks(readmeContent, dir) {
+			if isSecret(linked) {
 				continue
 			}
-			content := readTextFile(filepath.Join(dir, link))
-			if content != "" && budgetChars > 0 {
-				entry := fmt.Sprintf("### %s\n\n%s\n\n", link, content)
-				sb.WriteString(entry)
-				budgetChars -= len(entry)
+			content := readTextFile(linked)
+			if content == "" || budgetChars <= 0 {
+				continue
 			}
+			rel, _ := filepath.Rel(dir, linked)
+			entry := fmt.Sprintf("### %s\n\n%s", rel, content)
+			parts = append(parts, entry)
+			budgetChars -= len(entry)
 		}
 	}
 
-	// Relevant source files, ranked by relevance to the task.
+	// 4. Relevant source files — always.
 	ranked := rankFiles(dir, task)
-	if len(ranked) > 0 {
-		sb.WriteString("### Source files\n\n")
-		for _, f := range ranked {
-			if budgetChars <= 0 {
-				break
-			}
-			content := readTextFile(filepath.Join(dir, f))
-			if content == "" {
-				continue
-			}
-			block := fmt.Sprintf("// %s\n%s\n\n", f, content)
-			if len(block) > budgetChars {
-				break
-			}
-			sb.WriteString(block)
-			budgetChars -= len(block)
+	var fileBlocks []string
+	for _, f := range ranked {
+		if budgetChars <= 0 {
+			break
 		}
+		content := readTextFile(filepath.Join(dir, f))
+		if content == "" {
+			continue
+		}
+		block := fmt.Sprintf("// %s\n%s", f, content)
+		if len(block) > budgetChars {
+			break
+		}
+		fileBlocks = append(fileBlocks, block)
+		budgetChars -= len(block)
+	}
+	if len(fileBlocks) > 0 {
+		parts = append(parts, "### Source files\n\n"+strings.Join(fileBlocks, "\n\n"))
 	}
 
-	// Shallow project tree.
-	tree := projectTree(dir)
-	if tree != "" {
-		sb.WriteString("### Project structure\n\n```\n")
-		sb.WriteString(tree)
-		sb.WriteString("\n```\n")
-	}
-
-	return sb.String()
+	return strings.Join(parts, "\n\n")
 }
 
 // tokenBudgetChars returns the character budget for source files based on model name.
@@ -86,22 +87,22 @@ func tokenBudgetChars(model string) int {
 
 var mdLinkRe = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
 
-// extractLocalLinks returns local file paths from markdown links in text.
+// parseMarkdownLinks returns absolute paths to local files linked from text.
 // External URLs (http/https) are ignored.
-func extractLocalLinks(text string) []string {
-	var links []string
+func parseMarkdownLinks(text, dir string) []string {
+	var paths []string
 	for _, m := range mdLinkRe.FindAllStringSubmatch(text, -1) {
 		href := m[1]
 		if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
 			continue
 		}
 		href = strings.TrimPrefix(href, "./")
-		links = append(links, href)
+		paths = append(paths, filepath.Join(dir, href))
 	}
-	return links
+	return paths
 }
 
-var excludeDirs = []string{"vendor/", "node_modules/", ".git/"}
+var excludeDirs = []string{"vendor", "node_modules", ".git"}
 var excludeExts = []string{".pb.go", ".sum", ".lock"}
 
 // isSecret reports whether a file path looks like it might contain secrets.
@@ -119,7 +120,7 @@ func isExcluded(path string) bool {
 		return true
 	}
 	for _, dir := range excludeDirs {
-		if strings.HasPrefix(path, dir) || strings.Contains(path, "/"+dir) {
+		if strings.HasPrefix(path, dir+"/") || strings.Contains(path, "/"+dir+"/") {
 			return true
 		}
 	}
@@ -129,6 +130,48 @@ func isExcluded(path string) bool {
 		}
 	}
 	return false
+}
+
+// buildTree returns an indented directory tree for dir, up to 3 levels deep.
+// Skips vendor/, node_modules/, .git/, and *.pb.go files.
+// Never returns empty just because git is unavailable or README is absent.
+func buildTree(dir string) string {
+	var lines []string
+	walkTree(dir, dir, 0, &lines)
+	return strings.Join(lines, "\n")
+}
+
+func walkTree(root, current string, depth int, lines *[]string) {
+	if depth >= 3 {
+		return
+	}
+	entries, err := os.ReadDir(current)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		indent := strings.Repeat("  ", depth)
+		if e.IsDir() {
+			skip := false
+			for _, ex := range excludeDirs {
+				if name == ex {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+			*lines = append(*lines, indent+name+"/")
+			walkTree(root, filepath.Join(current, name), depth+1, lines)
+		} else {
+			if strings.HasSuffix(name, ".pb.go") {
+				continue
+			}
+			*lines = append(*lines, indent+name)
+		}
+	}
 }
 
 type scoredFile struct {
@@ -265,15 +308,6 @@ func gitRecentFiles(dir string) []string {
 		}
 	}
 	return files
-}
-
-// projectTree returns a flat list of tracked files as a simple tree.
-func projectTree(dir string) string {
-	out, err := exec.Command("git", "-C", dir, "ls-files").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }
 
 // readTextFile reads a file and returns its contents as a string.
