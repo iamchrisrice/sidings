@@ -15,10 +15,9 @@ import (
 type Event struct {
 	Tool       string   `json:"tool"`
 	TaskID     string   `json:"task_id"`
-	Tier       string   `json:"tier,omitempty"`
-	Method     string   `json:"method,omitempty"`
-	Matched    []string `json:"matched_keywords,omitempty"`
-	Backend    string   `json:"backend,omitempty"`
+	Tier       string `json:"tier,omitempty"`
+	Method     string `json:"method,omitempty"`
+	Backend    string `json:"backend,omitempty"`
 	Model      string   `json:"model,omitempty"`
 	Status     string   `json:"status,omitempty"`
 	DurationMS int64    `json:"duration_ms,omitempty"`

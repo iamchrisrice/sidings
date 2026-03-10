@@ -64,20 +64,35 @@ echo "build a notifications system" \
 | `complex` | Ollama `qwen2.5-coder:32b` | Implement feature, multi-file refactor |
 | `exceptional` | Claude Sonnet | System design, deep debugging |
 
+## How classification works
+
+### `sidings task classify`
+
+Classifies a coding task as `simple`, `medium`, `complex`, or `exceptional` using a local LLM (`qwen3.5:0.8b` via Ollama). The model returns a single word — no explanation, no ambiguity.
+
+```bash
+echo "rename this variable" | sidings task classify
+# {"task_id": "abc123", "content": "rename this variable", "tier": "simple", "method": "llm"}
+```
+
+If Ollama is unavailable, the task defaults to `exceptional` and routes to Claude Code.
+
+Tier definitions:
+- `simple` — single-line changes, typos, renames, adding a comment
+- `medium` — adding a function, writing a test, small self-contained change
+- `complex` — multi-file changes, refactoring, implementing a feature
+- `exceptional` — greenfield projects, system design, deep debugging, infrastructure
+
 ## Known behaviour
+
+**Classification uses a local LLM.**
+Every task is classified by `qwen3.5:0.8b` running locally via Ollama. This adds ~1-3 seconds per task. If Ollama is unavailable, all tasks default to `exceptional` and route to Claude Code.
 
 **Greenfield project creation always routes to exceptional.**
 Tasks like "create a REST API" or "scaffold a new service" always route to Claude Code. Local models cannot reliably produce multiple complete files in a single shot. This is by design — Claude Code handles multi-file creation iteratively, which works far better than a single-shot prompt to a local model.
 
 **Classification improves with specificity.**
 "Create a function to validate emails" routes correctly to medium. "Create a REST API with full tests" routes correctly to exceptional. Vague short tasks are more likely to misclassify — the more specific the task, the better the classification.
-
-**Classifier keyword tuning.**
-The heuristic keyword lists live in `pkg/classifier/tiers.go` and are easy to edit. If you notice consistent misclassifications for your workflow, adding keywords there is the fastest fix. The `method` and `matched` fields in classify output show exactly which keywords fired:
-
-```bash
-echo "your task" | sidings task classify | jq '{tier, method, matched}'
-```
 
 **`.claude/settings.json` is created automatically.**
 On first run in a new project directory, `sidings task dispatch` creates `.claude/settings.json` with sandbox mode enabled. This allows Claude Code to run autonomously within the project directory without permission prompts. If the file already exists with conflicting settings, sidings will exit with a clear error rather than overwriting your configuration.
@@ -94,7 +109,7 @@ Tools communicate via NDJSON — one JSON object per line. Each tool reads from 
 ```
 After `sidings task classify`:
 ```json
-{"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "method": "heuristic", "matched": ["refactor"]}
+{"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "method": "llm"}
 ```
 After `sidings task route`:
 ```json
@@ -106,21 +121,6 @@ After `sidings task dispatch`:
 ```
 
 Plain text input is accepted anywhere — tools wrap it into NDJSON automatically.
-
-## Diagnosing misclassifications
-
-The `method` and `matched` fields show exactly how a classification was reached:
-
-```bash
-echo "your task" | sidings task classify | jq '{tier, method, matched}'
-# {"tier": "medium", "method": "heuristic", "matched": ["create"]}
-```
-
-- `method: heuristic` — keyword list won outright
-- `method: llm` — ambiguous heuristics, LLM fallback made the call
-- `method: fallback` — LLM unavailable, defaulted to medium
-
-If the wrong keywords are firing, edit `pkg/classifier/tiers.go` and rebuild.
 
 ## Installation
 

@@ -17,8 +17,7 @@ type Task struct {
 	TaskID       string   `json:"task_id"`
 	Content      string   `json:"content"`
 	Tier         string   `json:"tier,omitempty"`
-	Method       string   `json:"method,omitempty"`  // "heuristic", "llm", or "default"
-	Matched      []string `json:"matched,omitempty"` // keywords that fired
+	Method       string   `json:"method,omitempty"` // "llm" or "fallback"
 	Route        *Route   `json:"route,omitempty"`
 	Result       string   `json:"result,omitempty"`
 	FilesWritten []string `json:"files_written,omitempty"`
