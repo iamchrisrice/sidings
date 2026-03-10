@@ -18,7 +18,7 @@ func TestEachDefaultTierRoutesToExpectedModel(t *testing.T) {
 		model string
 	}{
 		{"simple", "qwen3.5:0.8b"},
-		{"medium", "qwen3-coder"},
+		{"medium", "qwen3.5:9b"},
 		{"complex", "qwen3-coder"},
 		{"exceptional", ""},
 	}

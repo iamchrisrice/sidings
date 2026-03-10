@@ -17,7 +17,7 @@ type Decision struct {
 // defaultRoutes is the hardcoded fallback table used when no config file exists.
 var defaultRoutes = map[string]Decision{
 	"simple":      {Model: "qwen3.5:0.8b"},
-	"medium":      {Model: "qwen3-coder"},
+	"medium":      {Model: "qwen3.5:9b"},
 	"complex":     {Model: "qwen3-coder"},
 	"exceptional": {Model: ""}, // empty = Claude Code default (Sonnet)
 }

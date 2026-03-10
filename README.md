@@ -62,7 +62,7 @@ echo "build a notifications system" \
 | Tier | Model | Examples |
 |---|---|---|
 | `simple` | `qwen3.5:0.8b` (local) | Fix typo, rename variable, add comment |
-| `medium` | `qwen3-coder` (local) | Write tests, add a function, small refactor |
+| `medium` | `qwen3.5:9b` (local) | Write tests, add a function, small refactor |
 | `complex` | `qwen3-coder` (local) | Implement feature, multi-file refactor |
 | `exceptional` | Claude Sonnet (Anthropic API) | System design, deep debugging, greenfield projects |
 
@@ -152,9 +152,10 @@ echo "refactor the auth module" \
 Pull the required models:
 
 ```bash
-ollama pull qwen3.5:0.8b   # classifier
-ollama pull qwen3-coder    # simple/medium/complex tasks
-export OLLAMA_MAX_LOADED_MODELS=2
+ollama pull qwen3.5:0.8b   # classifier + simple tasks
+ollama pull qwen3.5:9b     # medium tasks
+ollama pull qwen3-coder    # complex tasks
+export OLLAMA_MAX_LOADED_MODELS=3
 ```
 
 No Anthropic API key needed — Claude Code handles auth with your existing Claude subscription.
