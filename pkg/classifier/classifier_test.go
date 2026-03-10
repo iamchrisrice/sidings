@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/iamchrisrice/sidings/pkg/classifier"
 )
@@ -188,6 +189,27 @@ func TestOllamaHTTPErrorDefaultsToExceptional(t *testing.T) {
 	}
 }
 
+func captureBody(t *testing.T, response string) (map[string]interface{}, error) {
+	t.Helper()
+	var capturedBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, r.ContentLength)
+		r.Body.Read(buf) //nolint:errcheck
+		capturedBody = buf
+		fmt.Fprintln(w, response)
+	}))
+	t.Cleanup(ts.Close)
+
+	c := classifier.New(withOllama(ts))
+	_, _ = c.Classify("some task")
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		return nil, fmt.Errorf("request body is not valid JSON: %v\nbody: %s", err, capturedBody)
+	}
+	return body, nil
+}
+
 func TestOllamaRequestBodyContainsTaskContent(t *testing.T) {
 	var capturedBody []byte
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -208,5 +230,79 @@ func TestOllamaRequestBodyContainsTaskContent(t *testing.T) {
 	prompt, _ := body["prompt"].(string)
 	if !strings.Contains(prompt, "refactor the auth module") {
 		t.Errorf("expected task content in prompt, got: %s", prompt)
+	}
+}
+
+func TestRequestBodyContainsNumPredict5(t *testing.T) {
+	body, err := captureBody(t, `{"response":"simple"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, ok := body["options"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected options object in request body")
+	}
+	if options["num_predict"] != float64(5) {
+		t.Errorf("num_predict = %v, want 5", options["num_predict"])
+	}
+}
+
+func TestRequestBodyContainsThinkFalse(t *testing.T) {
+	body, err := captureBody(t, `{"response":"simple"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, ok := body["options"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected options object in request body")
+	}
+	if options["think"] != false {
+		t.Errorf("think = %v, want false", options["think"])
+	}
+}
+
+func TestRequestBodyContainsNumCtx512(t *testing.T) {
+	body, err := captureBody(t, `{"response":"simple"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, ok := body["options"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected options object in request body")
+	}
+	if options["num_ctx"] != float64(512) {
+		t.Errorf("num_ctx = %v, want 512", options["num_ctx"])
+	}
+}
+
+func TestClientTimeoutCausesExceptionalFallback(t *testing.T) {
+	// Server that hangs until explicitly unblocked.
+	// We use a very short timeout override so the test doesn't actually wait 15s.
+	unblock := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-unblock:
+		case <-time.After(10 * time.Second):
+		}
+	}))
+
+	cfg := classifier.DefaultConfig()
+	cfg.OllamaURL = ts.URL
+	cfg.TimeoutSeconds = 1 // test-only override; real default is 15
+	c := classifier.New(cfg)
+
+	result, err := c.Classify("some task")
+	// Unblock the handler before closing the server so ts.Close() doesn't hang.
+	close(unblock)
+	ts.Close()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Tier != "exceptional" {
+		t.Errorf("tier = %q, want exceptional on timeout", result.Tier)
+	}
+	if result.Method != "fallback" {
+		t.Errorf("method = %q, want fallback on timeout", result.Method)
 	}
 }

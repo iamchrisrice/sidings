@@ -3,6 +3,7 @@ package classifier
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ type Result struct {
 type Config struct {
 	OllamaURL       string
 	ClassifierModel string
+	TimeoutSeconds  int // 0 = use default (15s)
 }
 
 // DefaultConfig returns sensible hardcoded defaults.
@@ -36,25 +38,36 @@ type Classifier interface {
 }
 
 type impl struct {
-	cfg Config
+	cfg    Config
+	client *http.Client
 }
 
 // New creates a Classifier with the given config.
 func New(cfg Config) Classifier {
-	return &impl{cfg: cfg}
+	timeout := 15 * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	return &impl{
+		cfg: cfg,
+		client: &http.Client{
+			Timeout: timeout,
+		},
+	}
 }
 
-const classifyPrompt = `You are a task complexity classifier. Classify the following coding task into exactly one tier:
+func buildPrompt(task string) string {
+	return fmt.Sprintf(`Classify this coding task. Reply with exactly one word.
 
-- simple: single-line changes, typos, renames, adding a comment
-- medium: adding a function, writing a test, small self-contained change
-- complex: multi-file changes, refactoring, implementing a feature
-- exceptional: greenfield projects, system design, deep debugging, anything involving infrastructure, deployment, Docker, Kubernetes
+simple = typo fix, rename variable, add comment
+medium = add function, write test, small change
+complex = multi-file refactor, implement feature
+exceptional = new project, system design, infrastructure, docker, kubernetes
 
-Reply with exactly one word: simple, medium, complex, or exceptional.
-No explanation. No punctuation. Just the tier.
+Task: %s
 
-Task: %s`
+Tier:`, task)
+}
 
 // Classify asks the local LLM to classify the task.
 // If Ollama is unavailable, defaults to "exceptional".
@@ -75,9 +88,10 @@ func (c *impl) ollamaURL() string {
 }
 
 type ollamaRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Stream bool   `json:"stream"`
+	Model   string                 `json:"model"`
+	Prompt  string                 `json:"prompt"`
+	Stream  bool                   `json:"stream"`
+	Options map[string]interface{} `json:"options"`
 }
 
 type ollamaResponse struct {
@@ -85,13 +99,22 @@ type ollamaResponse struct {
 }
 
 func (c *impl) callLLM(task string) (string, error) {
-	prompt := fmt.Sprintf(classifyPrompt, task)
+	req := ollamaRequest{
+		Model:  c.cfg.ClassifierModel,
+		Prompt: buildPrompt(task),
+		Stream: false,
+		Options: map[string]interface{}{
+			"num_predict": 5,     // cap response to 5 tokens — enough for one word
+			"num_ctx":     512,   // small context — classifier prompt is short
+			"think":       false, // disable chain-of-thought reasoning
+		},
+	}
 
 	var out ollamaResponse
-	client := resty.New().SetTimeout(30 * time.Second)
+	client := resty.NewWithClient(c.client)
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
-		SetBody(ollamaRequest{Model: c.cfg.ClassifierModel, Prompt: prompt, Stream: false}).
+		SetBody(req).
 		SetResult(&out).
 		Post(c.ollamaURL() + "/api/generate")
 
