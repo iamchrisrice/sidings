@@ -11,5 +11,5 @@ type Executor interface {
 // Result holds the outcome of task execution.
 type Result struct {
 	FilesWritten []string // paths of files created or modified
-	Output       string   // plain-text model output (when no file blocks found)
+	DurationMS   int64
 }

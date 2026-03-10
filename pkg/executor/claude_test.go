@@ -5,10 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/iamchrisrice/sidings/pkg/pipe"
 )
+
+// --- helpers ---
 
 func writeSettings(t *testing.T, dir string, content string) string {
 	t.Helper()
@@ -36,7 +41,226 @@ func readSettings(t *testing.T, dir string) map[string]interface{} {
 	return m
 }
 
-// TestEnsureClaudeSettingsMissingFile — file missing → created with sandbox enabled.
+func initGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+	}
+	run("git", "init")
+	run("git", "config", "user.email", "test@test.com")
+	run("git", "config", "user.name", "Test")
+}
+
+// --- buildArgs ---
+
+func TestBuildArgsIncludesModelFlagWhenModelSet(t *testing.T) {
+	task := pipe.Task{
+		Content: "rename foo to bar",
+		Tier:    "medium",
+		Route:   &pipe.Route{Model: "qwen3-coder"},
+	}
+	args := buildArgs(task)
+	modelIdx := -1
+	for i, a := range args {
+		if a == "--model" {
+			modelIdx = i
+			break
+		}
+	}
+	if modelIdx == -1 {
+		t.Fatalf("--model flag not found in args: %v", args)
+	}
+	if modelIdx+1 >= len(args) || args[modelIdx+1] != "qwen3-coder" {
+		t.Errorf("--model value = %q, want qwen3-coder", args[modelIdx+1])
+	}
+}
+
+func TestBuildArgsNoModelFlagWhenModelEmpty(t *testing.T) {
+	task := pipe.Task{
+		Content: "some task",
+		Tier:    "exceptional",
+		Route:   &pipe.Route{Model: ""},
+	}
+	args := buildArgs(task)
+	for _, a := range args {
+		if a == "--model" {
+			t.Errorf("unexpected --model flag in args: %v", args)
+		}
+	}
+}
+
+func TestBuildArgsNoModelFlagWhenRouteNil(t *testing.T) {
+	task := pipe.Task{
+		Content: "some task",
+		Tier:    "exceptional",
+		Route:   nil,
+	}
+	args := buildArgs(task)
+	for _, a := range args {
+		if a == "--model" {
+			t.Errorf("unexpected --model flag when route is nil: %v", args)
+		}
+	}
+}
+
+// --- buildEnv ---
+
+func TestBuildEnvLocalTierSetsAnthropicEnv(t *testing.T) {
+	for _, tier := range []string{"simple", "medium", "complex"} {
+		tier := tier
+		t.Run(tier, func(t *testing.T) {
+			env := buildEnv(tier, "http://localhost:11434")
+			if env == nil {
+				t.Fatal("expected non-nil env for local tier")
+			}
+			var hasBaseURL, hasAuthToken bool
+			for _, e := range env {
+				if strings.HasPrefix(e, "ANTHROPIC_BASE_URL=") {
+					hasBaseURL = true
+				}
+				if e == "ANTHROPIC_AUTH_TOKEN=ollama" {
+					hasAuthToken = true
+				}
+			}
+			if !hasBaseURL {
+				t.Error("ANTHROPIC_BASE_URL not set in env")
+			}
+			if !hasAuthToken {
+				t.Error("ANTHROPIC_AUTH_TOKEN not set in env")
+			}
+		})
+	}
+}
+
+func TestBuildEnvExceptionalTierReturnsNil(t *testing.T) {
+	env := buildEnv("exceptional", "http://localhost:11434")
+	if env != nil {
+		t.Errorf("expected nil env for exceptional tier, got %d entries", len(env))
+	}
+}
+
+func TestBuildEnvLocalTierBaseURLMatchesOllamaURL(t *testing.T) {
+	env := buildEnv("simple", "http://custom:8080")
+	for _, e := range env {
+		if e == "ANTHROPIC_BASE_URL=http://custom:8080" {
+			return
+		}
+	}
+	t.Errorf("ANTHROPIC_BASE_URL not set to custom URL in: %v", env)
+}
+
+func TestBuildEnvLocalTierDefaultsOllamaURLWhenEmpty(t *testing.T) {
+	env := buildEnv("medium", "")
+	for _, e := range env {
+		if e == "ANTHROPIC_BASE_URL=http://localhost:11434" {
+			return
+		}
+	}
+	t.Errorf("ANTHROPIC_BASE_URL not defaulted correctly in: %v", env)
+}
+
+// --- gitModifiedFiles ---
+
+func TestGitModifiedFilesCleanRepo(t *testing.T) {
+	dir := t.TempDir()
+	if err := exec.Command("git", "init", dir).Run(); err != nil {
+		t.Skip("git not available:", err)
+	}
+
+	files, err := gitModifiedFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Errorf("expected empty map for clean repo, got %v", files)
+	}
+}
+
+func TestGitModifiedFilesModifiedFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := exec.Command("git", "init", dir).Run(); err != nil {
+		t.Skip("git not available:", err)
+	}
+	initGitRepo(t, dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "foo.go"), []byte("package main"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := gitModifiedFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := files["foo.go"]; !ok {
+		t.Errorf("expected foo.go in modified files, got %v", files)
+	}
+}
+
+func TestGitModifiedFilesNotGitRepo(t *testing.T) {
+	dir := t.TempDir() // plain dir, no git init
+
+	files, err := gitModifiedFiles(dir)
+	if err != nil {
+		t.Errorf("expected no error for non-git dir, got: %v", err)
+	}
+	if len(files) != 0 {
+		t.Errorf("expected empty map for non-git dir, got %v", files)
+	}
+}
+
+// --- diffFiles ---
+
+func TestDiffFilesNewFile(t *testing.T) {
+	before := map[string]struct{}{}
+	after := map[string]struct{}{"foo.go": {}}
+	result := diffFiles(before, after)
+	if len(result) != 1 || result[0] != "foo.go" {
+		t.Errorf("expected [foo.go], got %v", result)
+	}
+}
+
+func TestDiffFilesModifiedFile(t *testing.T) {
+	// A file not in before but showing as modified in after (e.g. Claude changed it).
+	before := map[string]struct{}{}
+	after := map[string]struct{}{"bar.go": {}}
+	result := diffFiles(before, after)
+	if len(result) != 1 || result[0] != "bar.go" {
+		t.Errorf("expected [bar.go], got %v", result)
+	}
+}
+
+func TestDiffFilesNoChanges(t *testing.T) {
+	before := map[string]struct{}{"existing.go": {}}
+	after := map[string]struct{}{"existing.go": {}}
+	result := diffFiles(before, after)
+	if len(result) != 0 {
+		t.Errorf("expected empty slice, got %v", result)
+	}
+}
+
+func TestDiffFilesSortedAlphabetically(t *testing.T) {
+	before := map[string]struct{}{}
+	after := map[string]struct{}{
+		"z.go": {},
+		"a.go": {},
+		"m.go": {},
+	}
+	result := diffFiles(before, after)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 files, got %v", result)
+	}
+	if result[0] != "a.go" || result[1] != "m.go" || result[2] != "z.go" {
+		t.Errorf("expected alphabetical order, got %v", result)
+	}
+}
+
+// --- ensureClaudeSettings ---
+
 func TestEnsureClaudeSettingsMissingFile(t *testing.T) {
 	dir := t.TempDir()
 
@@ -66,7 +290,6 @@ func TestEnsureClaudeSettingsMissingFile(t *testing.T) {
 	}
 }
 
-// TestEnsureClaudeSettingsMergesSandbox — file exists without sandbox block → sandbox block added, rest untouched.
 func TestEnsureClaudeSettingsMergesSandbox(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"custom":"value","permissions":{"defaultMode":"acceptEdits"}}`)
@@ -88,7 +311,6 @@ func TestEnsureClaudeSettingsMergesSandbox(t *testing.T) {
 	}
 }
 
-// TestEnsureClaudeSettingsNoop — file exists with sandbox already enabled → no-op, file unchanged.
 func TestEnsureClaudeSettingsNoop(t *testing.T) {
 	dir := t.TempDir()
 	original := `{"permissions":{"defaultMode":"acceptEdits"},"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}`
@@ -106,7 +328,6 @@ func TestEnsureClaudeSettingsNoop(t *testing.T) {
 	}
 }
 
-// TestEnsureClaudeSettingsSandboxDisabledClash — sandbox.enabled false → ErrSettingsConflict.
 func TestEnsureClaudeSettingsSandboxDisabledClash(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"sandbox":{"enabled":false}}`)
@@ -117,7 +338,6 @@ func TestEnsureClaudeSettingsSandboxDisabledClash(t *testing.T) {
 	}
 }
 
-// TestEnsureClaudeSettingsDisableBypassClash — disableBypassPermissionsMode "disable" → ErrSettingsConflict.
 func TestEnsureClaudeSettingsDisableBypassClash(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"permissions":{"disableBypassPermissionsMode":"disable"}}`)
@@ -128,14 +348,10 @@ func TestEnsureClaudeSettingsDisableBypassClash(t *testing.T) {
 	}
 }
 
-// TestEnsureClaudeSettingsMultipleClashes — multiple clashes → all reported before exiting.
 func TestEnsureClaudeSettingsMultipleClashes(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"sandbox":{"enabled":false},"permissions":{"disableBypassPermissionsMode":"disable"}}`)
 
-	// Capture stderr by temporarily redirecting — we use detectClashes directly
-	// since stderr capture from ensureClaudeSettings requires process-level tricks.
-	// Instead, test detectClashes directly for multi-clash reporting.
 	settings := map[string]interface{}{
 		"sandbox": map[string]interface{}{"enabled": false},
 		"permissions": map[string]interface{}{
@@ -147,14 +363,12 @@ func TestEnsureClaudeSettingsMultipleClashes(t *testing.T) {
 		t.Errorf("expected 2 clashes, got %d: %v", len(clashes), clashes)
 	}
 
-	// Also confirm ensureClaudeSettings returns ErrSettingsConflict.
 	err := ensureClaudeSettings(dir, false)
 	if !errors.Is(err, ErrSettingsConflict) {
 		t.Fatalf("expected ErrSettingsConflict, got %v", err)
 	}
 }
 
-// TestEnsureClaudeSettingsDefaultModePreserved — existing permissions.defaultMode left unchanged.
 func TestEnsureClaudeSettingsDefaultModePreserved(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"permissions":{"defaultMode":"bypassPermissions"}}`)
@@ -170,7 +384,6 @@ func TestEnsureClaudeSettingsDefaultModePreserved(t *testing.T) {
 	}
 }
 
-// TestEnsureClaudeSettingsNoRelevantKeys — valid JSON but no relevant keys → all sidings keys merged in.
 func TestEnsureClaudeSettingsNoRelevantKeys(t *testing.T) {
 	dir := t.TempDir()
 	writeSettings(t, dir, `{"someOtherKey":42}`)
@@ -199,7 +412,6 @@ func TestEnsureClaudeSettingsNoRelevantKeys(t *testing.T) {
 	}
 }
 
-// TestEnsureClaudeSettingsMalformedJSON — malformed JSON → error, file not overwritten.
 func TestEnsureClaudeSettingsMalformedJSON(t *testing.T) {
 	dir := t.TempDir()
 	p := writeSettings(t, dir, `{not valid json`)
@@ -212,14 +424,12 @@ func TestEnsureClaudeSettingsMalformedJSON(t *testing.T) {
 		t.Fatal("expected a parse error, not ErrSettingsConflict")
 	}
 
-	// File must not have been overwritten.
 	data, _ := os.ReadFile(p)
 	if !bytes.Equal(data, []byte(`{not valid json`)) {
 		t.Errorf("file was overwritten; got %q", data)
 	}
 }
 
-// TestDetectClashesNoClash — valid settings → no clashes returned.
 func TestDetectClashesNoClash(t *testing.T) {
 	settings := map[string]interface{}{
 		"sandbox": map[string]interface{}{"enabled": true},
@@ -232,7 +442,6 @@ func TestDetectClashesNoClash(t *testing.T) {
 	}
 }
 
-// TestMergeSettingsIdempotent — calling mergeSettings twice reports changed=false on second call.
 func TestMergeSettingsIdempotent(t *testing.T) {
 	settings := map[string]interface{}{}
 	merged, changed := mergeSettings(settings)
@@ -245,7 +454,6 @@ func TestMergeSettingsIdempotent(t *testing.T) {
 	}
 }
 
-// TestDetectClashesMessages — clash messages mention the offending key.
 func TestDetectClashesMessages(t *testing.T) {
 	settings := map[string]interface{}{
 		"sandbox":     map[string]interface{}{"enabled": false},

@@ -36,26 +36,21 @@ func main() {
 				return err
 			}
 
-			// Warn on unknown tier (route fell back to medium).
 			if _, known := table[task.Tier]; !known {
 				fmt.Fprintf(os.Stderr, "task-route: warning: unknown tier %q, routing as medium\n", task.Tier)
 			}
 
 			if verbose {
-				fmt.Fprintf(os.Stderr, "→ %s: %s %s\n", task.Tier, d.Backend, d.Model)
+				fmt.Fprintf(os.Stderr, "→ %s: %s\n", task.Tier, d.Model)
 			}
 
-			task.Route = &pipe.Route{
-				Backend: d.Backend,
-				Model:   d.Model,
-			}
+			task.Route = &pipe.Route{Model: d.Model}
 
 			telemetry.Emit(telemetry.Event{
-				Tool:    "task-route",
-				TaskID:  task.TaskID,
-				Tier:    task.Tier,
-				Backend: d.Backend,
-				Model:   d.Model,
+				Tool:   "task-route",
+				TaskID: task.TaskID,
+				Tier:   task.Tier,
+				Model:  d.Model,
 			})
 
 			return pipe.Write(os.Stdout, task)

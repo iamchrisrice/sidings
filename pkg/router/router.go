@@ -1,4 +1,4 @@
-// Package router maps classification tiers to execution backends.
+// Package router maps classification tiers to execution models.
 // The routing table is a plain map — easy to find, easy to edit.
 package router
 
@@ -7,19 +7,19 @@ type Router interface {
 	Route(tier string) (Decision, error)
 }
 
-// Decision is the selected backend and model for a task.
+// Decision is the selected model for a task.
+// All tasks are executed via Claude Code — the model determines which backend
+// Claude Code uses (Ollama for local tiers, Anthropic API for exceptional).
 type Decision struct {
-	Backend string // "ollama" or "claude"
-	Model   string
+	Model string
 }
 
 // defaultRoutes is the hardcoded fallback table used when no config file exists.
-// Edit here to change the default routing behaviour.
 var defaultRoutes = map[string]Decision{
-	"simple":      {Backend: "ollama", Model: "qwen3.5:0.8b"},
-	"medium":      {Backend: "ollama", Model: "qwen3.5:9b"},
-	"complex":     {Backend: "ollama", Model: "qwen2.5-coder:32b"},
-	"exceptional": {Backend: "claude", Model: "sonnet"},
+	"simple":      {Model: "qwen3.5:0.8b"},
+	"medium":      {Model: "qwen3-coder"},
+	"complex":     {Model: "qwen3-coder"},
+	"exceptional": {Model: ""}, // empty = Claude Code default (Sonnet)
 }
 
 type tableRouter struct {
@@ -27,7 +27,6 @@ type tableRouter struct {
 }
 
 // New creates a Router using the provided routing table.
-// Use LoadConfig to build the table from config file + defaults.
 func New(table map[string]Decision) Router {
 	return &tableRouter{table: table}
 }

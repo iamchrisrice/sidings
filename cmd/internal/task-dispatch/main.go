@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -30,9 +31,19 @@ func loadConfig() dispatchConfig {
 	return cfg
 }
 
+func checkOllama(url string) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url + "/api/tags")
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
 func main() {
-	var dryRun bool
 	var verbose bool
+	var ollamaURL string
 
 	root := &cobra.Command{
 		Use:          "task-dispatch",
@@ -49,39 +60,32 @@ func main() {
 			}
 
 			cfg := loadConfig()
-			start := time.Now()
-
-			telemetry.Emit(telemetry.Event{
-				Tool:    "task-dispatch",
-				TaskID:  task.TaskID,
-				Tier:    task.Tier,
-				Backend: task.Route.Backend,
-				Model:   task.Route.Model,
-				Status:  "running",
-			})
-
-			var backend executor.Executor
-			switch task.Route.Backend {
-			case "claude":
-				backend = executor.NewClaude()
-			default:
-				backend = executor.NewOllama(executor.OllamaConfig{
-					OllamaURL: cfg.OllamaURL,
-					DryRun:    dryRun,
-				})
+			if ollamaURL != "" {
+				cfg.OllamaURL = ollamaURL
 			}
 
-			result, err := backend.Execute(*task, verbose)
-			task.DurationMS = time.Since(start).Milliseconds()
+			// Warn if Ollama is unreachable for local tiers.
+			if task.Tier != "exceptional" && !checkOllama(cfg.OllamaURL) {
+				fmt.Fprintf(os.Stderr, "sidings: warning: ollama not available at %s — local model tasks will fail\n", cfg.OllamaURL)
+			}
 
+			telemetry.Emit(telemetry.Event{
+				Tool:   "task-dispatch",
+				TaskID: task.TaskID,
+				Tier:   task.Tier,
+				Model:  task.Route.Model,
+				Status: "running",
+			})
+
+			ex := executor.NewClaude(cfg.OllamaURL)
+			result, err := ex.Execute(*task, verbose)
 			if err != nil {
 				task.Status = "failed"
 				task.Error = err.Error()
+				task.DurationMS = result.DurationMS
 				telemetry.Emit(telemetry.Event{
 					Tool:       "task-dispatch",
 					TaskID:     task.TaskID,
-					Backend:    task.Route.Backend,
-					Model:      task.Route.Model,
 					Status:     "failed",
 					DurationMS: task.DurationMS,
 				})
@@ -91,15 +95,11 @@ func main() {
 
 			task.Status = "complete"
 			task.FilesWritten = result.FilesWritten
-			if result.Output != "" {
-				task.Result = result.Output
-			}
+			task.DurationMS = result.DurationMS
 
 			telemetry.Emit(telemetry.Event{
 				Tool:       "task-dispatch",
 				TaskID:     task.TaskID,
-				Backend:    task.Route.Backend,
-				Model:      task.Route.Model,
 				Status:     "complete",
 				DurationMS: task.DurationMS,
 			})
@@ -108,8 +108,8 @@ func main() {
 		},
 	}
 
-	root.Flags().BoolVar(&dryRun, "dry-run", false, "print built prompt to stderr, don't execute")
-	root.Flags().BoolVar(&verbose, "verbose", false, "show routing, file writes, and token streaming")
+	root.Flags().BoolVar(&verbose, "verbose", false, "show file writes and routing details")
+	root.Flags().StringVar(&ollamaURL, "ollama-url", "", "override Ollama URL (default: from config or http://localhost:11434)")
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)

@@ -9,8 +9,7 @@ import (
 
 type configFile struct {
 	Routes map[string]struct {
-		Backend string `yaml:"backend"`
-		Model   string `yaml:"model"`
+		Model string `yaml:"model"`
 	} `yaml:"routes"`
 }
 
@@ -40,7 +39,7 @@ func LoadConfigFrom(path string) map[string]Decision {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return table // file is optional
+		return table
 	}
 
 	var cfg configFile
@@ -48,9 +47,7 @@ func LoadConfigFrom(path string) map[string]Decision {
 		return table
 	}
 	for tier, route := range cfg.Routes {
-		if route.Backend != "" && route.Model != "" {
-			table[tier] = Decision{Backend: route.Backend, Model: route.Model}
-		}
+		table[tier] = Decision{Model: route.Model}
 	}
 	return table
 }

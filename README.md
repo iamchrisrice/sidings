@@ -41,10 +41,12 @@ Task arrives
     ↓
 sidings task classify   → what kind of task is this?
     ↓
-sidings task route      → which backend should handle it?
+sidings task route      → which model should handle it?
     ↓
-sidings task dispatch   → build prompt with project context, execute, emit result
+sidings task dispatch   → launch Claude Code with the right model and environment
 ```
+
+For local tiers (simple/medium/complex), Claude Code is pointed at Ollama via environment variables. For exceptional tasks, Claude Code uses Anthropic's API directly. The same Claude Code session handles context gathering, file writing, and permissions in both cases.
 
 For parallel workloads — the shell does the work:
 
@@ -57,25 +59,28 @@ echo "build a notifications system" \
 
 ## Routing tiers
 
-| Tier | Backend | Examples |
+| Tier | Model | Examples |
 |---|---|---|
-| `simple` | Ollama `qwen3.5:0.8b` | Fix typo, rename variable, add comment |
-| `medium` | Ollama `qwen3.5:9b` | Write tests, add a function, small refactor |
-| `complex` | Ollama `qwen2.5-coder:32b` | Implement feature, multi-file refactor |
-| `exceptional` | Claude Sonnet | System design, deep debugging |
+| `simple` | `qwen3.5:0.8b` (local) | Fix typo, rename variable, add comment |
+| `medium` | `qwen3-coder` (local) | Write tests, add a function, small refactor |
+| `complex` | `qwen3-coder` (local) | Implement feature, multi-file refactor |
+| `exceptional` | Claude Sonnet (Anthropic API) | System design, deep debugging, greenfield projects |
+
+Local tiers run through Claude Code pointed at Ollama — free, private, no API calls.
+Exceptional tier runs through Claude Code using your Anthropic subscription.
 
 ## How classification works
 
 ### `sidings task classify`
 
-Classifies a coding task as `simple`, `medium`, `complex`, or `exceptional` using a local LLM (`qwen3.5:0.8b` via Ollama). The model returns a single word — no explanation, no ambiguity.
+Classifies a coding task as `simple`, `medium`, `complex`, or `exceptional` using `qwen3.5:0.8b` running locally via Ollama. Returns a single word — no heuristics, no keyword lists.
 
 ```bash
 echo "rename this variable" | sidings task classify
 # {"task_id": "abc123", "content": "rename this variable", "tier": "simple", "method": "llm"}
 ```
 
-If Ollama is unavailable, the task defaults to `exceptional` and routes to Claude Code.
+If Ollama is unavailable, defaults to `exceptional`.
 
 Tier definitions:
 - `simple` — single-line changes, typos, renames, adding a comment
@@ -85,20 +90,17 @@ Tier definitions:
 
 ## Known behaviour
 
+**All tiers use Claude Code.**
+Claude Code handles context gathering, file writing, and permissions for every tier. For local tiers it is pointed at Ollama via `ANTHROPIC_BASE_URL`. For exceptional tasks it uses Anthropic's API directly. The pipeline behaviour is identical regardless of which model runs the task.
+
 **Classification uses a local LLM.**
-Every task is classified by `qwen3.5:0.8b` running locally via Ollama. This adds ~1-3 seconds per task. If Ollama is unavailable, all tasks default to `exceptional` and route to Claude Code.
+Every task is classified by `qwen3.5:0.8b` running locally via Ollama. This adds ~1-3 seconds per task. If Ollama is unavailable, all tasks default to `exceptional` and route to Claude Code via the Anthropic API.
 
 **Greenfield project creation always routes to exceptional.**
-Tasks like "create a REST API" or "scaffold a new service" always route to Claude Code. Local models cannot reliably produce multiple complete files in a single shot. This is by design — Claude Code handles multi-file creation iteratively, which works far better than a single-shot prompt to a local model.
-
-**Classification improves with specificity.**
-"Create a function to validate emails" routes correctly to medium. "Create a REST API with full tests" routes correctly to exceptional. Vague short tasks are more likely to misclassify — the more specific the task, the better the classification.
+Tasks like "create a REST API" or "scaffold a new service" always route to Claude Sonnet. Local models via Ollama handle targeted edits well but struggle with large multi-file creation in a single session.
 
 **`.claude/settings.json` is created automatically.**
-On first run in a new project directory, `sidings task dispatch` creates `.claude/settings.json` with sandbox mode enabled. This allows Claude Code to run autonomously within the project directory without permission prompts. If the file already exists with conflicting settings, sidings will exit with a clear error rather than overwriting your configuration.
-
-**Ollama models respond in `<file>` blocks.**
-When dispatching to local models, sidings instructs them to respond using XML-style file blocks. Most of the time this works. Occasionally a model responds in prose instead — when this happens the response is stored in the `result` field of the NDJSON output and no files are written. Use `--dry-run` to inspect the prompt if you see unexpected prose responses.
+On first run in a new project directory, `sidings task dispatch` creates `.claude/settings.json` with sandbox mode enabled. If the file already exists with conflicting settings, sidings exits with a clear error rather than overwriting your configuration.
 
 ## Pipe format
 
@@ -113,11 +115,11 @@ After `sidings task classify`:
 ```
 After `sidings task route`:
 ```json
-{"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "route": {"backend": "ollama", "model": "qwen2.5-coder:32b"}}
+{"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "route": {"model": "qwen3-coder"}}
 ```
 After `sidings task dispatch`:
 ```json
-{"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "route": {"backend": "ollama", "model": "qwen2.5-coder:32b"}, "result": "...", "duration_ms": 4200, "status": "complete"}
+{"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "route": {"model": "qwen3-coder"}, "files_written": ["pkg/auth/auth.go"], "duration_ms": 4200, "status": "complete"}
 ```
 
 Plain text input is accepted anywhere — tools wrap it into NDJSON automatically.
@@ -150,10 +152,9 @@ echo "refactor the auth module" \
 Pull the required models:
 
 ```bash
-ollama pull qwen3.5:0.8b
-ollama pull qwen3.5:9b
-ollama pull qwen2.5-coder:32b
-export OLLAMA_MAX_LOADED_MODELS=3
+ollama pull qwen3.5:0.8b   # classifier
+ollama pull qwen3-coder    # simple/medium/complex tasks
+export OLLAMA_MAX_LOADED_MODELS=2
 ```
 
 No Anthropic API key needed — Claude Code handles auth with your existing Claude subscription.
@@ -174,10 +175,10 @@ sidings/
   pkg/
     classifier/     # classification logic and tier definitions
     router/         # routing table and decision logic
-    executor/       # Ollama and Claude Code backends
-    prompt/         # project context gathering and prompt construction
+    executor/       # Claude Code executor (all tiers)
     pipe/           # shared NDJSON types
     telemetry/      # Unix socket event emitter
+    tty/            # terminal input helpers
   Makefile
   go.mod
   README.md
@@ -187,6 +188,7 @@ sidings/
 
 - [x] `pkg/pipe` — shared NDJSON types
 - [x] `pkg/telemetry` — shared socket emitter
+- [x] `pkg/tty` — terminal input helpers
 - [x] `sidings task classify`
 - [x] `sidings task route`
 - [x] `sidings task dispatch`

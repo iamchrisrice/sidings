@@ -26,10 +26,9 @@ type Task struct {
 	DurationMS   int64    `json:"duration_ms,omitempty"`
 }
 
-// Route describes the selected execution backend.
+// Route describes the selected model for Claude Code to use.
 type Route struct {
-	Backend string `json:"backend"`
-	Model   string `json:"model"`
+	Model string `json:"model"`
 }
 
 // NewTask creates a Task from plain text content with a fresh UUID.
