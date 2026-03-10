@@ -247,17 +247,24 @@ func TestRequestBodyContainsNumPredict5(t *testing.T) {
 	}
 }
 
-func TestRequestBodyContainsThinkFalse(t *testing.T) {
+func TestRequestBodyThinkIsFalseAndTopLevel(t *testing.T) {
 	body, err := captureBody(t, `{"response":"simple"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	options, ok := body["options"].(map[string]interface{})
-	if !ok {
-		t.Fatal("expected options object in request body")
+	// think must be a top-level field — inside options is ignored by Ollama.
+	think, exists := body["think"]
+	if !exists {
+		t.Fatal("top-level \"think\" field missing from request body")
 	}
-	if options["think"] != false {
-		t.Errorf("think = %v, want false", options["think"])
+	if think != false {
+		t.Errorf("think = %v, want false", think)
+	}
+	// Confirm think is NOT inside options (belt-and-suspenders).
+	if options, ok := body["options"].(map[string]interface{}); ok {
+		if _, inOptions := options["think"]; inOptions {
+			t.Error("\"think\" must not be inside options — Ollama ignores it there")
+		}
 	}
 }
 

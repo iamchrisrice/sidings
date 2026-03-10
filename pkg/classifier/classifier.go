@@ -91,6 +91,7 @@ type ollamaRequest struct {
 	Model   string                 `json:"model"`
 	Prompt  string                 `json:"prompt"`
 	Stream  bool                   `json:"stream"`
+	Think   bool                   `json:"think"`   // top-level — NOT inside options
 	Options map[string]interface{} `json:"options"`
 }
 
@@ -103,10 +104,10 @@ func (c *impl) callLLM(task string) (string, error) {
 		Model:  c.cfg.ClassifierModel,
 		Prompt: buildPrompt(task),
 		Stream: false,
+		Think:  false, // disable chain-of-thought — must be top-level
 		Options: map[string]interface{}{
-			"num_predict": 5,     // cap response to 5 tokens — enough for one word
-			"num_ctx":     512,   // small context — classifier prompt is short
-			"think":       false, // disable chain-of-thought reasoning
+			"num_predict": 5,   // cap response to 5 tokens — enough for one word
+			"num_ctx":     512, // small context — classifier prompt is short
 		},
 	}
 
