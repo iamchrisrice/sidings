@@ -28,7 +28,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		OllamaURL:       "http://localhost:11434",
-		ClassifierModel: "qwen3.5:0.8b",
+		ClassifierModel: "qwen3.5:9b",
 	}
 }
 
@@ -108,6 +108,7 @@ func (c *impl) callLLM(task string) (string, error) {
 		Options: map[string]interface{}{
 			"num_predict": 5,   // cap response to 5 tokens — enough for one word
 			"num_ctx":     512, // small context — classifier prompt is short
+			"temperature": 0,   // deterministic — same task always returns same tier
 		},
 	}
 

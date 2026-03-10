@@ -73,7 +73,7 @@ Exceptional tier runs through Claude Code using your Anthropic subscription.
 
 ### `sidings task classify`
 
-Classifies a coding task as `simple`, `medium`, `complex`, or `exceptional` using `qwen3.5:0.8b` running locally via Ollama. Returns a single word — no heuristics, no keyword lists.
+Classifies a coding task as `simple`, `medium`, `complex`, or `exceptional` using `qwen3.5:9b` running locally via Ollama. Returns a single word — no heuristics, no keyword lists.
 
 ```bash
 echo "rename this variable" | sidings task classify
@@ -94,7 +94,7 @@ Tier definitions:
 Claude Code handles context gathering, file writing, and permissions for every tier. For local tiers it is pointed at Ollama via `ANTHROPIC_BASE_URL`. For exceptional tasks it uses Anthropic's API directly. The pipeline behaviour is identical regardless of which model runs the task.
 
 **Classification uses a local LLM.**
-Every task is classified by `qwen3.5:0.8b` running locally via Ollama. This adds ~1-3 seconds per task. If Ollama is unavailable, all tasks default to `exceptional` and route to Claude Code via the Anthropic API.
+Every task is classified by `qwen3.5:9b` running locally via Ollama. This adds ~1-3 seconds per task. If Ollama is unavailable, all tasks default to `exceptional` and route to Claude Code via the Anthropic API.
 
 **Greenfield project creation always routes to exceptional.**
 Tasks like "create a REST API" or "scaffold a new service" always route to Claude Sonnet. Local models via Ollama handle targeted edits well but struggle with large multi-file creation in a single session.
@@ -158,8 +158,8 @@ Detects your shell automatically and installs completion. Supports bash, zsh, an
 Pull the required models:
 
 ```bash
-ollama pull qwen3.5:0.8b   # classifier + simple tasks
-ollama pull qwen3.5:9b     # medium tasks
+ollama pull qwen3.5:0.8b   # simple tasks
+ollama pull qwen3.5:9b     # classifier + medium tasks
 ollama pull qwen3-coder    # complex tasks
 export OLLAMA_MAX_LOADED_MODELS=3
 ```
