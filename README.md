@@ -132,16 +132,22 @@ cd sidings
 make install
 ```
 
-Installs libexec binaries to `~/.local/libexec/sidings/` and the `sidings` wrapper to `~/.local/bin/`.
+Installs to `~/.local/`:
+- Libexec binaries → `~/.local/libexec/sidings/`
+- `sidings` wrapper → `~/.local/bin/sidings`
 
-Until the `sidings` wrapper is built, call the libexec binaries directly:
+Make sure `~/.local/bin` is on your PATH:
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Shell completion
 
 ```bash
-echo "refactor the auth module" \
-  | ~/.local/libexec/sidings/task-classify \
-  | ~/.local/libexec/sidings/task-route \
-  | ~/.local/libexec/sidings/task-dispatch
+sidings completion install
 ```
+
+Detects your shell automatically and installs completion. Supports bash, zsh, and fish.
 
 **Prerequisites:**
 - Go 1.21+
@@ -193,9 +199,9 @@ sidings/
 - [x] `sidings task classify`
 - [x] `sidings task route`
 - [x] `sidings task dispatch`
+- [x] `sidings` wrapper with shell completion
 - [ ] `sidings monitor`
 - [ ] `sidings task decompose` + `sidings task merge`
-- [ ] `sidings` wrapper with shell completion
 
 ## Name
 
