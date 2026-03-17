@@ -57,50 +57,61 @@ echo "build a notifications system" \
   | sidings task merge
 ```
 
+## Prerequisites
+
+- Go 1.21+
+- [Ollama](https://ollama.com) installed and running locally
+- [Claude Code](https://claude.ai/code) installed and authenticated (`claude login`)
+- `git` — sidings uses `git diff` to detect files written; initialise your project with `git init` before using sidings
+
+Pull the required models:
+
+```bash
+ollama pull qwen3.5:9b
+ollama pull qwen3-coder
+export OLLAMA_MAX_LOADED_MODELS=2
+```
+
+No Anthropic API key is required for simple/medium/complex tasks — these run entirely locally via Ollama. The `exceptional` tier uses your existing Claude Code subscription.
+
 ## Routing tiers
 
-| Tier | Model | Examples |
-|---|---|---|
-| `simple` | `qwen3.5:0.8b` (local) | Fix typo, rename variable, add comment |
-| `medium` | `qwen3.5:9b` (local) | Write tests, add a function, small refactor |
-| `complex` | `qwen3-coder` (local) | Implement feature, multi-file refactor |
-| `exceptional` | Claude Sonnet (Anthropic API) | System design, deep debugging, greenfield projects |
-
-Local tiers run through Claude Code pointed at Ollama — free, private, no API calls.
-Exceptional tier runs through Claude Code using your Anthropic subscription.
+| Tier | Model | Where |
+|------|-------|-------|
+| simple | qwen3.5:9b | local (Ollama) |
+| medium | qwen3.5:9b | local (Ollama) |
+| complex | qwen3-coder | local (Ollama) |
+| exceptional | Claude (claude-sonnet) | Anthropic API |
 
 ## How classification works
 
-### `sidings task classify`
+Every task is classified by `qwen3.5:9b` running locally via Ollama. There are no keyword lists or heuristics — the model reads the task and returns a single tier word.
 
-Classifies a coding task as `simple`, `medium`, `complex`, or `exceptional` using `qwen3.5:9b` running locally via Ollama. Returns a single word — no heuristics, no keyword lists.
+Classification is deterministic (`temperature: 0`) and fast (typically under 3 seconds).
+
+If Ollama is unavailable, classification falls back to `exceptional` so tasks still complete via the Anthropic API rather than failing silently.
+
+To inspect classification:
 
 ```bash
-echo "rename this variable" | sidings task classify
-# {"task_id": "abc123", "content": "rename this variable", "tier": "simple", "method": "llm"}
+echo "your task" | sidings task classify | jq '{tier, method}'
 ```
 
-If Ollama is unavailable, defaults to `exceptional`.
+- `method: llm` — classified by local model (normal)
+- `method: fallback` — Ollama unavailable, defaulted to exceptional
 
-Tier definitions:
-- `simple` — single-line changes, typos, renames, adding a comment
-- `medium` — adding a function, writing a test, small self-contained change
-- `complex` — multi-file changes, refactoring, implementing a feature
-- `exceptional` — greenfield projects, system design, deep debugging, infrastructure
+## Dispatcher behaviour
 
-## Known behaviour
+`sidings task dispatch` runs Claude Code as a subprocess. Claude Code's own output (tool use steps, progress lines) is redirected to stderr — only the final NDJSON result line is written to stdout.
 
-**All tiers use Claude Code.**
-Claude Code handles context gathering, file writing, and permissions for every tier. For local tiers it is pointed at Ollama via `ANTHROPIC_BASE_URL`. For exceptional tasks it uses Anthropic's API directly. The pipeline behaviour is identical regardless of which model runs the task.
+This means:
+- Piping works cleanly — only structured output flows downstream
+- `2>/dev/null` suppresses all Claude Code chatter
+- `2>dispatch.log` captures the full session log for debugging
 
-**Classification uses a local LLM.**
-Every task is classified by `qwen3.5:9b` running locally via Ollama. This adds ~1-3 seconds per task. If Ollama is unavailable, all tasks default to `exceptional` and route to Claude Code via the Anthropic API.
+Files written by Claude Code are detected via `git diff` before and after execution, so the NDJSON result always includes an accurate `files_written` count regardless of which tier handled the task.
 
-**Greenfield project creation always routes to exceptional.**
-Tasks like "create a REST API" or "scaffold a new service" always route to Claude Sonnet. Local models via Ollama handle targeted edits well but struggle with large multi-file creation in a single session.
-
-**`.claude/settings.json` is created automatically.**
-On first run in a new project directory, `sidings task dispatch` creates `.claude/settings.json` with sandbox mode enabled. If the file already exists with conflicting settings, sidings exits with a clear error rather than overwriting your configuration.
+`.claude/settings.json` is created automatically on first run in a new project directory with sandbox mode enabled. If the file already exists with conflicting settings, sidings exits with a clear error rather than silently overwriting your configuration.
 
 ## Pipe format
 
@@ -127,19 +138,16 @@ Plain text input is accepted anywhere — tools wrap it into NDJSON automaticall
 ## Installation
 
 ```bash
-git clone https://github.com/you/sidings
+git clone https://github.com/iamchrisrice/sidings
 cd sidings
 make install
 ```
 
-Installs to `~/.local/`:
-- Libexec binaries → `~/.local/libexec/sidings/`
-- `sidings` wrapper → `~/.local/bin/sidings`
+Installs to:
+- `~/.local/bin/sidings` — the main wrapper
+- `~/.local/libexec/sidings/` — internal binaries (task-classify, task-route, task-dispatch)
 
-Make sure `~/.local/bin` is on your PATH:
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+Add `~/.local/bin` to your PATH if not already present.
 
 ### Shell completion
 
@@ -149,22 +157,44 @@ sidings completion install
 
 Detects your shell automatically and installs completion. Supports bash, zsh, and fish.
 
-**Prerequisites:**
-- Go 1.21+
-- [Ollama](https://ollama.com) installed and running
-- [Claude Code](https://claude.ai/code) installed and authenticated (`claude login`)
-- `git` — sidings uses git for context gathering; run `git init` in your project before using sidings
+## Tips
 
-Pull the required models:
-
+**Suppress Claude Code output:**
 ```bash
-ollama pull qwen3.5:0.8b   # simple tasks
-ollama pull qwen3.5:9b     # classifier + medium tasks
-ollama pull qwen3-coder    # complex tasks
-export OLLAMA_MAX_LOADED_MODELS=3
+echo "fix the typo in README.md" \
+  | sidings task classify \
+  | sidings task route \
+  | sidings task dispatch 2>/dev/null
 ```
 
-No Anthropic API key needed — Claude Code handles auth with your existing Claude subscription.
+**Log Claude Code output for debugging:**
+```bash
+echo "add error handling to main.go" \
+  | sidings task classify \
+  | sidings task route \
+  | sidings task dispatch 2>session.log
+```
+
+**Run from your project root** — sidings gathers context from the current working directory.
+
+**Initialise git before using sidings** — sidings uses `git diff` to track which files were written. Without a git repo, file tracking won't work.
+
+**`exceptional` tier tasks use the Anthropic API** — ensure Claude Code is authenticated (`claude login`) before running tasks that might route to exceptional.
+
+## Build status
+
+- [x] `pkg/pipe` — shared NDJSON types
+- [x] `pkg/telemetry` — socket emitter
+- [x] `pkg/tty` — /dev/tty reader for confirmation prompts
+- [x] `pkg/classifier` — LLM-only classifier (qwen3.5:9b)
+- [x] `pkg/router` — tier-to-model mapping
+- [x] `pkg/executor/claude.go` — single executor for all tiers
+- [x] `cmd/internal/task-classify`
+- [x] `cmd/internal/task-route`
+- [x] `cmd/internal/task-dispatch`
+- [x] `cmd/sidings` — wrapper with shell completion
+- [ ] `sidings monitor`
+- [ ] `sidings task decompose` + `sidings task merge`
 
 ## Project structure
 
@@ -190,18 +220,6 @@ sidings/
   go.mod
   README.md
 ```
-
-## Build status
-
-- [x] `pkg/pipe` — shared NDJSON types
-- [x] `pkg/telemetry` — shared socket emitter
-- [x] `pkg/tty` — terminal input helpers
-- [x] `sidings task classify`
-- [x] `sidings task route`
-- [x] `sidings task dispatch`
-- [x] `sidings` wrapper with shell completion
-- [ ] `sidings monitor`
-- [ ] `sidings task decompose` + `sidings task merge`
 
 ## Name
 

@@ -50,7 +50,7 @@ func (e *ClaudeExecutor) Execute(task pipe.Task, verbose bool) (Result, error) {
 	args := buildArgs(task)
 	cmd := exec.Command("claude", args...)
 	cmd.Stdin = tty.Reader()
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 
 	if env := buildEnv(task.Tier, e.ollamaURL()); env != nil {
