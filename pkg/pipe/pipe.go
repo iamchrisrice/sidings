@@ -14,16 +14,18 @@ import (
 
 // Task is the core type flowing through the sidings pipeline.
 type Task struct {
-	TaskID       string   `json:"task_id"`
-	Content      string   `json:"content"`
-	Tier         string   `json:"tier,omitempty"`
-	Method       string   `json:"method,omitempty"` // "llm" or "fallback"
-	Route        *Route   `json:"route,omitempty"`
-	Result       string   `json:"result,omitempty"`
-	FilesWritten []string `json:"files_written,omitempty"`
-	Status       string   `json:"status,omitempty"`
-	Error        string   `json:"error,omitempty"`
-	DurationMS   int64    `json:"duration_ms,omitempty"`
+	TaskID        string   `json:"task_id"`
+	Content       string   `json:"content"`
+	ParentTaskID  string   `json:"parent_task_id,omitempty"`
+	ParentContent string   `json:"parent_content,omitempty"`
+	Tier          string   `json:"tier,omitempty"`
+	Method        string   `json:"method,omitempty"` // "llm" or "fallback"
+	Route         *Route   `json:"route,omitempty"`
+	Result        string   `json:"result,omitempty"`
+	FilesWritten  []string `json:"files_written,omitempty"`
+	Status        string   `json:"status,omitempty"`
+	Error         string   `json:"error,omitempty"`
+	DurationMS    int64    `json:"duration_ms,omitempty"`
 }
 
 // Route describes the selected model for Claude Code to use.
