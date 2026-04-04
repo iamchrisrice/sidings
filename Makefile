@@ -12,6 +12,7 @@ install: build
 	cp bin/task-route      $(LIBEXEC_DIR)/
 	cp bin/task-dispatch   $(LIBEXEC_DIR)/
 	cp bin/task-decompose  $(LIBEXEC_DIR)/
+	cp bin/task-merge      $(LIBEXEC_DIR)/
 	cp bin/sidings         $(BIN_DIR)/
 	@echo "installed. run: sidings --help"
 
