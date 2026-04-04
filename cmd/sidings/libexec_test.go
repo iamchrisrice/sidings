@@ -18,10 +18,10 @@ func stubBinary(t *testing.T, dir, name string) string {
 
 func TestLibexecPathSIDINGS_LIBEXECTakesFirst(t *testing.T) {
 	dir := t.TempDir()
-	stub := stubBinary(t, dir, "task-classify")
+	stub := stubBinary(t, dir, "classify")
 	t.Setenv("SIDINGS_LIBEXEC", dir)
 
-	path, err := libexecPath("task-classify")
+	path, err := libexecPath("classify")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -36,12 +36,12 @@ func TestLibexecPathHomeLocalLibexec(t *testing.T) {
 	if err := os.MkdirAll(libexecDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stub := stubBinary(t, libexecDir, "task-route")
+	stub := stubBinary(t, libexecDir, "route")
 
 	t.Setenv("HOME", dir)
 	t.Setenv("SIDINGS_LIBEXEC", "") // prevent SIDINGS_LIBEXEC from winning
 
-	path, err := libexecPath("task-route")
+	path, err := libexecPath("route")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,12 +66,12 @@ func TestLibexecPathNotFound(t *testing.T) {
 
 func TestLibexecPathSameDirFallback(t *testing.T) {
 	dir := t.TempDir()
-	stub := stubBinary(t, dir, "task-dispatch")
+	stub := stubBinary(t, dir, "dispatch")
 
 	// libexecCandidates uses filepath.Dir(argv0) as the last candidate.
 	// Pass a fake argv0 in the same dir as the stub.
 	fakeArgv0 := filepath.Join(dir, "sidings")
-	candidates := libexecCandidates("task-dispatch", fakeArgv0)
+	candidates := libexecCandidates("dispatch", fakeArgv0)
 
 	found := false
 	for _, c := range candidates {
@@ -90,15 +90,15 @@ func TestLibexecPathSIDINGS_LIBEXECBeatsHomeLocal(t *testing.T) {
 	if err := os.MkdirAll(libexecDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	stubBinary(t, libexecDir, "task-classify") // exists in home
+	stubBinary(t, libexecDir, "classify") // exists in home
 
 	envDir := t.TempDir()
-	envStub := stubBinary(t, envDir, "task-classify") // also exists in SIDINGS_LIBEXEC
+	envStub := stubBinary(t, envDir, "classify") // also exists in SIDINGS_LIBEXEC
 
 	t.Setenv("HOME", homeDir)
 	t.Setenv("SIDINGS_LIBEXEC", envDir)
 
-	path, err := libexecPath("task-classify")
+	path, err := libexecPath("classify")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
