@@ -38,12 +38,17 @@ func loadConfig() decomposeConfig {
 	return cfg
 }
 
-// gatherContext collects project context for the decomposition prompt.
+// gatherContext collects project context from the current directory.
 func gatherContext() string {
+	return gatherContextFrom(".")
+}
+
+// gatherContextFrom collects project context from the given directory.
+func gatherContextFrom(dir string) string {
 	var sb strings.Builder
 
 	// 1. git ls-files
-	if out, err := exec.Command("git", "ls-files").Output(); err == nil {
+	if out, err := exec.Command("git", "-C", dir, "ls-files").Output(); err == nil {
 		sb.WriteString("Tracked files:\n")
 		sb.WriteString(string(out))
 		sb.WriteString("\n")
@@ -51,7 +56,7 @@ func gatherContext() string {
 
 	// 2. Key files
 	for _, name := range []string{"go.mod", "README.md"} {
-		if data, err := os.ReadFile(name); err == nil {
+		if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
 			fmt.Fprintf(&sb, "--- %s ---\n%s\n", name, string(data))
 		}
 	}
@@ -62,7 +67,7 @@ func gatherContext() string {
 		modTime time.Time
 	}
 	var goFiles []goFile
-	_ = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
 		}

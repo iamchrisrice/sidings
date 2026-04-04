@@ -282,6 +282,60 @@ func TestRequestBodyContainsNumCtx512(t *testing.T) {
 	}
 }
 
+func TestOllamaHTTP4xxDefaultsToExceptional(t *testing.T) {
+	for _, code := range []int{http.StatusBadRequest, http.StatusNotFound, http.StatusUnauthorized} {
+		code := code
+		t.Run(fmt.Sprintf("HTTP%d", code), func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(code)
+			}))
+			t.Cleanup(ts.Close)
+
+			c := classifier.New(withOllama(ts))
+			result, err := c.Classify("some task")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Tier != "exceptional" {
+				t.Errorf("HTTP %d: tier = %q, want exceptional", code, result.Tier)
+			}
+			if result.Method != "fallback" {
+				t.Errorf("HTTP %d: method = %q, want fallback", code, result.Method)
+			}
+		})
+	}
+}
+
+func TestMalformedJSONResponseDefaultsToExceptional(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintln(w, "not valid json {{{{")
+	}))
+	t.Cleanup(ts.Close)
+
+	c := classifier.New(withOllama(ts))
+	result, err := c.Classify("some task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Tier != "exceptional" {
+		t.Errorf("tier = %q, want exceptional (malformed JSON)", result.Tier)
+	}
+	if result.Method != "fallback" {
+		t.Errorf("method = %q, want fallback", result.Method)
+	}
+}
+
+func TestDefaultConfigValues(t *testing.T) {
+	cfg := classifier.DefaultConfig()
+	if cfg.OllamaURL != "http://localhost:11434" {
+		t.Errorf("OllamaURL = %q, want http://localhost:11434", cfg.OllamaURL)
+	}
+	if cfg.ClassifierModel != "qwen3.5:9b" {
+		t.Errorf("ClassifierModel = %q, want qwen3.5:9b", cfg.ClassifierModel)
+	}
+}
+
 func TestClientTimeoutCausesExceptionalFallback(t *testing.T) {
 	// Server that hangs until explicitly unblocked.
 	// We use a very short timeout override so the test doesn't actually wait 15s.

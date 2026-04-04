@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -471,5 +472,127 @@ func TestDetectClashesMessages(t *testing.T) {
 		if !found {
 			t.Errorf("clash message for %q not found in %v", want, clashes)
 		}
+	}
+}
+
+// --- Execute ---
+
+// writeFakeClaude writes a shell script named "claude" to binDir that exits
+// with the given exit code. Returns binDir for prepending to PATH.
+func writeFakeClaude(t *testing.T, exitCode int) string {
+	t.Helper()
+	binDir := t.TempDir()
+	script := filepath.Join(binDir, "claude")
+	content := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
+	if err := os.WriteFile(script, []byte(content), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return binDir
+}
+
+func TestExecuteReturnsErrorWhenClaudeNotFound(t *testing.T) {
+	// Set up git repo before we touch PATH.
+	gitDir := t.TempDir()
+	initGitRepo(t, gitDir)
+	t.Chdir(gitDir)
+
+	// Now restrict PATH so 'claude' can't be found.
+	t.Setenv("PATH", t.TempDir())
+
+	ex := NewClaude("http://localhost:11434")
+	task := pipe.Task{
+		TaskID:  "test",
+		Content: "test task",
+		Tier:    "medium",
+		Route:   &pipe.Route{Model: "qwen3.5:9b"},
+	}
+
+	_, err := ex.Execute(task, false)
+	if err == nil {
+		t.Error("expected error when claude not found in PATH")
+	}
+}
+
+func TestExecuteReturnsErrorWhenClaudeExitsNonZero(t *testing.T) {
+	gitDir := t.TempDir()
+	initGitRepo(t, gitDir)
+	t.Chdir(gitDir)
+
+	binDir := writeFakeClaude(t, 1)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	ex := NewClaude("http://localhost:11434")
+	task := pipe.Task{
+		TaskID:  "test",
+		Content: "test task",
+		Tier:    "medium",
+		Route:   &pipe.Route{Model: "qwen3.5:9b"},
+	}
+
+	_, err := ex.Execute(task, false)
+	if err == nil {
+		t.Error("expected error when claude exits non-zero")
+	}
+}
+
+func TestExecuteSuccessEmptyFilesWhenNoGitChanges(t *testing.T) {
+	gitDir := t.TempDir()
+	initGitRepo(t, gitDir)
+	t.Chdir(gitDir)
+
+	binDir := writeFakeClaude(t, 0)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	ex := NewClaude("http://localhost:11434")
+	task := pipe.Task{
+		TaskID:  "test",
+		Content: "test task",
+		Tier:    "medium",
+		Route:   &pipe.Route{Model: "qwen3.5:9b"},
+	}
+
+	result, err := ex.Execute(task, false)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(result.FilesWritten) != 0 {
+		t.Errorf("files_written = %v, want empty (no git changes)", result.FilesWritten)
+	}
+}
+
+func TestExecuteDetectsNewFilesAfterSuccess(t *testing.T) {
+	gitDir := t.TempDir()
+	initGitRepo(t, gitDir)
+	t.Chdir(gitDir)
+
+	// Fake claude that creates a new file (simulating a real code change).
+	binDir := t.TempDir()
+	script := filepath.Join(binDir, "claude")
+	scriptContent := fmt.Sprintf("#!/bin/sh\ntouch %s/new_file.go\nexit 0\n", gitDir)
+	if err := os.WriteFile(script, []byte(scriptContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	ex := NewClaude("http://localhost:11434")
+	task := pipe.Task{
+		TaskID:  "test",
+		Content: "test task",
+		Tier:    "medium",
+		Route:   &pipe.Route{Model: "qwen3.5:9b"},
+	}
+
+	result, err := ex.Execute(task, false)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	found := false
+	for _, f := range result.FilesWritten {
+		if strings.Contains(f, "new_file.go") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected new_file.go in files_written, got %v", result.FilesWritten)
 	}
 }

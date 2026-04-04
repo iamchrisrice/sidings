@@ -90,3 +90,62 @@ func TestMissingConfigFileFallsBackToDefaultsGracefully(t *testing.T) {
 		t.Errorf("simple: model = %q, want default qwen3.5:0.8b", d.Model)
 	}
 }
+
+func TestMalformedYAMLConfigFallsBackToDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "route.yaml")
+	if err := os.WriteFile(cfgPath, []byte("routes: [this is: not: valid: yaml"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	table := router.LoadConfigFrom(cfgPath)
+	r := router.New(table)
+
+	d, err := r.Route("medium")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Model != "qwen3.5:9b" {
+		t.Errorf("medium: model = %q, want default qwen3.5:9b", d.Model)
+	}
+}
+
+func TestLoadConfigUsesHomeDirectory(t *testing.T) {
+	// Home with no config file → defaults.
+	t.Setenv("HOME", t.TempDir())
+	table := router.LoadConfig()
+	r := router.New(table)
+
+	d, err := r.Route("simple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Model != "qwen3.5:0.8b" {
+		t.Errorf("simple: model = %q, want default qwen3.5:0.8b", d.Model)
+	}
+}
+
+func TestLoadConfigPicksUpHomeConfigFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfgDir := filepath.Join(home, ".sidings")
+	if err := os.MkdirAll(cfgDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(cfgDir, "route.yaml")
+	if err := os.WriteFile(cfgPath, []byte("routes:\n  simple:\n    model: custom-simple\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	table := router.LoadConfig()
+	r := router.New(table)
+
+	d, err := r.Route("simple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Model != "custom-simple" {
+		t.Errorf("simple: model = %q, want custom-simple", d.Model)
+	}
+}

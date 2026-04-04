@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -43,6 +44,29 @@ func loadConfig() classifier.Config {
 	return cfg
 }
 
+func run(stdin io.Reader, stdout io.Writer, c classifier.Classifier, verbose bool) error {
+	task, err := pipe.Read(stdin)
+	if err != nil {
+		return fmt.Errorf("reading stdin: %w", err)
+	}
+	result, err := c.Classify(task.Content)
+	if err != nil {
+		return err
+	}
+	task.Tier = result.Tier
+	task.Method = result.Method
+	if verbose {
+		fmt.Fprintf(os.Stderr, "%s (%s)\n", result.Tier, result.Method)
+	}
+	telemetry.Emit(telemetry.Event{
+		Tool:   "task-classify",
+		TaskID: task.TaskID,
+		Tier:   result.Tier,
+		Method: result.Method,
+	})
+	return pipe.Write(stdout, task)
+}
+
 func main() {
 	var verbose bool
 
@@ -51,39 +75,12 @@ func main() {
 		Short:        "Classify a coding task into a routing tier",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var task *pipe.Task
-			var err error
-
+			var reader io.Reader = os.Stdin
 			if len(args) > 0 {
-				task = pipe.NewTask(strings.Join(args, " "))
-			} else {
-				task, err = pipe.Read(os.Stdin)
-				if err != nil {
-					return fmt.Errorf("reading stdin: %w", err)
-				}
+				reader = strings.NewReader(strings.Join(args, " "))
 			}
-
 			cfg := loadConfig()
-			c := classifier.New(cfg)
-			result, err := c.Classify(task.Content)
-			if err != nil {
-				return err
-			}
-			task.Tier = result.Tier
-			task.Method = result.Method
-
-			if verbose {
-				fmt.Fprintf(os.Stderr, "%s (%s)\n", result.Tier, result.Method)
-			}
-
-			telemetry.Emit(telemetry.Event{
-				Tool:   "task-classify",
-				TaskID: task.TaskID,
-				Tier:   result.Tier,
-				Method: result.Method,
-			})
-
-			return pipe.Write(os.Stdout, task)
+			return run(reader, os.Stdout, classifier.New(cfg), verbose)
 		},
 	}
 
