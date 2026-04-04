@@ -10,8 +10,17 @@ import (
 func taskCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "task",
-		Short: "Route and execute coding tasks",
-		Long:  "Route and execute coding tasks through the sidings pipeline.",
+		Short: "Route, execute, and coordinate coding tasks",
+		Long: `Route, execute, and coordinate coding tasks through the sidings pipeline.
+
+Single task:
+  echo "fix the typo in README.md" | sidings task classify | sidings task route | sidings task dispatch
+
+Parallel pipeline:
+  echo "add authentication to the bookmarks API" \
+    | sidings task decompose \
+    | xargs -P 4 -I {} sh -c 'echo "{}" | sidings task classify | sidings task route | sidings task dispatch 2>/dev/null' \
+    | sidings task merge`,
 	}
 
 	cmd.AddCommand(
@@ -25,11 +34,27 @@ func taskCmd() *cobra.Command {
 			"Execute a task against the routed model",
 			"Executes a classified and routed task via Claude Code."),
 		delegate("decompose", "task-decompose",
-			"Break a large task into parallel subtasks",
-			"Decomposes a large task into smaller parallel subtasks."),
+			"Break a large task into independent subtasks",
+			`Decomposes a large task into 3–6 independent subtasks, each emitted as its own NDJSON line.
+
+Gathers project context first (tracked files, go.mod, recent .go files) so subtasks
+reference real filenames and packages from the current directory.
+
+Each output line carries parent_task_id and parent_content so downstream tools have
+full context when the subtasks are dispatched in parallel.`),
 		delegate("merge", "task-merge",
-			"Combine results from parallel task execution",
-			"Merges results from parallel task execution."),
+			"Merge parallel subtask results into a single summary",
+			`Reads subtask result lines until EOF and emits one summary NDJSON line per parent task.
+
+Summary fields:
+  status           complete (all succeeded) | partial (some failed) | failed (all failed)
+  subtasks_total   count of subtask lines received
+  subtasks_complete / subtasks_failed
+  files_written    deduplicated union across all subtasks
+  duration_ms      wall-clock elapsed from first to last result (not a sum)
+
+Lines without a parent_task_id pass through unchanged, so merge is safe to add to
+any pipeline regardless of whether decompose was used.`),
 	)
 
 	return cmd
