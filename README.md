@@ -6,9 +6,9 @@ Built in Go. Designed for Apple Silicon. Inspired by fifty years of Unix philoso
 
 ```bash
 echo "refactor the auth module" \
-  | sidings task classify \
-  | sidings task route \
-  | sidings task dispatch
+  | sidings classify \
+  | sidings route \
+  | sidings dispatch
 ```
 
 ## Design philosophy
@@ -39,11 +39,11 @@ The default routing preference is always local. Free, private, and fast enough f
 ```
 Task arrives
     ↓
-sidings task classify   → what kind of task is this?
+sidings classify   → what kind of task is this?
     ↓
-sidings task route      → which model should handle it?
+sidings route      → which model should handle it?
     ↓
-sidings task dispatch   → launch Claude Code with the right model and environment
+sidings dispatch   → launch Claude Code with the right model and environment
 ```
 
 For local tiers (simple/medium/complex), Claude Code is pointed at Ollama via environment variables. For exceptional tasks, Claude Code uses Anthropic's API directly. The same Claude Code session handles context gathering, file writing, and permissions in both cases.
@@ -52,9 +52,9 @@ For parallel workloads — the shell does the work:
 
 ```bash
 echo "build a notifications system" \
-  | sidings task decompose \
-  | xargs -P 4 -I {} sh -c 'echo "{}" | sidings task classify | sidings task route | sidings task dispatch' \
-  | sidings task merge
+  | sidings decompose \
+  | xargs -P 4 -I {} sh -c 'echo "{}" | sidings classify | sidings route | sidings dispatch' \
+  | sidings merge
 ```
 
 ## Prerequisites
@@ -94,7 +94,7 @@ If Ollama is unavailable, classification falls back to `exceptional` so tasks st
 To inspect classification:
 
 ```bash
-echo "your task" | sidings task classify | jq '{tier, method}'
+echo "your task" | sidings classify | jq '{tier, method}'
 ```
 
 - `method: llm` — classified by local model (normal)
@@ -102,9 +102,9 @@ echo "your task" | sidings task classify | jq '{tier, method}'
 
 ## Decompose and merge
 
-`sidings task decompose` breaks a large task into 3–6 independent subtasks, each emitted as its own NDJSON line. It gathers project context first (tracked files, `go.mod`, `README.md`, recent `.go` files) so subtasks reference real filenames and packages.
+`sidings decompose` breaks a large task into 3–6 independent subtasks, each emitted as its own NDJSON line. It gathers project context first (tracked files, `go.mod`, `README.md`, recent `.go` files) so subtasks reference real filenames and packages.
 
-`sidings task merge` reads subtask result lines until EOF and emits one summary line per parent task:
+`sidings merge` reads subtask result lines until EOF and emits one summary line per parent task:
 
 ```json
 {"task_id":"abc123","content":"add authentication to the bookmarks API","status":"complete","subtasks_total":3,"subtasks_complete":3,"subtasks_failed":0,"files_written":["handlers/auth.go","middleware/auth.go","models/user.go"],"duration_ms":12400}
@@ -116,7 +116,7 @@ Lines without a `parent_task_id` pass through merge unchanged, so merge is safe 
 
 ## Dispatcher behaviour
 
-`sidings task dispatch` runs Claude Code as a subprocess. Claude Code's own output (tool use steps, progress lines) is redirected to stderr — only the final NDJSON result line is written to stdout.
+`sidings dispatch` runs Claude Code as a subprocess. Claude Code's own output (tool use steps, progress lines) is redirected to stderr — only the final NDJSON result line is written to stdout.
 
 This means:
 - Piping works cleanly — only structured output flows downstream
@@ -134,27 +134,27 @@ Tools communicate via NDJSON — one JSON object per line. Each tool reads from 
 ```json
 {"task_id": "abc123", "content": "refactor the auth module"}
 ```
-After `sidings task classify`:
+After `sidings classify`:
 ```json
 {"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "method": "llm"}
 ```
-After `sidings task route`:
+After `sidings route`:
 ```json
 {"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "route": {"model": "qwen3-coder"}}
 ```
-After `sidings task dispatch`:
+After `sidings dispatch`:
 ```json
 {"task_id": "abc123", "content": "refactor the auth module", "tier": "complex", "route": {"model": "qwen3-coder"}, "files_written": ["pkg/auth/auth.go"], "duration_ms": 4200, "status": "complete"}
 ```
 
 Plain text input is accepted anywhere — tools wrap it into NDJSON automatically.
 
-For parallel pipelines, `sidings task decompose` emits one line per subtask with `parent_task_id` and `parent_content` set:
+For parallel pipelines, `sidings decompose` emits one line per subtask with `parent_task_id` and `parent_content` set:
 ```json
 {"task_id":"uuid1","content":"add User model with id, email, password_hash fields","parent_task_id":"abc123","parent_content":"add authentication to the bookmarks API"}
 {"task_id":"uuid2","content":"add POST /login endpoint that validates credentials and returns a JWT","parent_task_id":"abc123","parent_content":"add authentication to the bookmarks API"}
 ```
-After each subtask flows through classify → route → dispatch, `sidings task merge` collects the results into a single summary line.
+After each subtask flows through classify → route → dispatch, `sidings merge` collects the results into a single summary line.
 
 ## Installation
 
@@ -166,7 +166,7 @@ make install
 
 Installs to:
 - `~/.local/bin/sidings` — the main wrapper
-- `~/.local/libexec/sidings/` — internal binaries (task-classify, task-route, task-dispatch, task-decompose, task-merge)
+- `~/.local/libexec/sidings/` — internal binaries (classify, route, dispatch, decompose, merge)
 
 Add `~/.local/bin` to your PATH if not already present.
 
@@ -183,17 +183,17 @@ Detects your shell automatically and installs completion. Supports bash, zsh, an
 **Suppress Claude Code output:**
 ```bash
 echo "fix the typo in README.md" \
-  | sidings task classify \
-  | sidings task route \
-  | sidings task dispatch 2>/dev/null
+  | sidings classify \
+  | sidings route \
+  | sidings dispatch 2>/dev/null
 ```
 
 **Log Claude Code output for debugging:**
 ```bash
 echo "add error handling to main.go" \
-  | sidings task classify \
-  | sidings task route \
-  | sidings task dispatch 2>session.log
+  | sidings classify \
+  | sidings route \
+  | sidings dispatch 2>session.log
 ```
 
 **Run from your project root** — sidings gathers context from the current working directory.
@@ -210,11 +210,11 @@ echo "add error handling to main.go" \
 - [x] `pkg/classifier` — LLM-only classifier (qwen3.5:9b)
 - [x] `pkg/router` — tier-to-model mapping
 - [x] `pkg/executor/claude.go` — single executor for all tiers
-- [x] `cmd/internal/task-classify`
-- [x] `cmd/internal/task-route`
-- [x] `cmd/internal/task-dispatch`
-- [x] `cmd/internal/task-decompose`
-- [x] `cmd/internal/task-merge`
+- [x] `cmd/internal/classify`
+- [x] `cmd/internal/route`
+- [x] `cmd/internal/dispatch`
+- [ ] `cmd/internal/decompose`
+- [ ] `cmd/internal/merge`
 - [x] `cmd/sidings` — wrapper with shell completion
 - [ ] `sidings monitor`
 
@@ -225,12 +225,12 @@ sidings/
   cmd/
     sidings/                  # public wrapper binary with shell completion
     internal/                 # libexec binaries — not public interface
-      task-classify/
-      task-route/
-      task-dispatch/
+      classify/
+      route/
+      dispatch/
+      decompose/
+      merge/
       monitor/
-      task-decompose/
-      task-merge/
   pkg/
     classifier/     # classification logic and tier definitions
     router/         # routing table and decision logic

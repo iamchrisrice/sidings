@@ -8,12 +8,12 @@ build:
 
 install: build
 	mkdir -p $(LIBEXEC_DIR) $(BIN_DIR)
-	cp bin/task-classify   $(LIBEXEC_DIR)/
-	cp bin/task-route      $(LIBEXEC_DIR)/
-	cp bin/task-dispatch   $(LIBEXEC_DIR)/
-	cp bin/task-decompose  $(LIBEXEC_DIR)/
-	cp bin/task-merge      $(LIBEXEC_DIR)/
-	cp bin/sidings         $(BIN_DIR)/
+	cp bin/classify  $(LIBEXEC_DIR)/
+	cp bin/route     $(LIBEXEC_DIR)/
+	cp bin/dispatch  $(LIBEXEC_DIR)/
+	cp bin/decompose $(LIBEXEC_DIR)/
+	cp bin/merge     $(LIBEXEC_DIR)/
+	cp bin/sidings   $(BIN_DIR)/
 	@echo "installed. run: sidings --help"
 
 uninstall:
